@@ -23,6 +23,13 @@ class TestIO:
         assert n == 100
         assert d == 3
 
+    def test_read_str_image(self):
+        basename = str(EXAMPLES_DIR / "potts_30x30_3")
+        t, n, d = pynem.io.read_str(basename + ".str")
+        assert t == "I"
+        assert n == 900  # 30 * 30
+        assert d == 2
+
     def test_read_dat(self):
         _, n, d = pynem.io.read_str(BASENAME + ".str")
         X = pynem.io.read_dat(BASENAME + ".dat", n, d)
