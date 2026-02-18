@@ -47,6 +47,20 @@ def write_dat(path, X):
     np.savetxt(path, X, fmt="%.6f", delimiter="\t")
 
 
+def write_labels(path, labels):
+    """Write true labels to a .cf file (1-based, space-separated).
+
+    Parameters
+    ----------
+    path : str or Path
+    labels : np.ndarray of shape (N,)
+        0-based class labels.
+    """
+    labels_1based = np.asarray(labels) + 1
+    with open(path, "w") as f:
+        f.write(" ".join(str(l) for l in labels_1based) + "\n")
+
+
 def write_nei(path, G):
     """Write a .nei file from a networkx Graph.
 
@@ -149,11 +163,12 @@ class SBMData:
         return ax
 
     def export(self, basename):
-        """Write basename.{str,dat,nei} files."""
+        """Write basename.{str,dat,nei,true.cf} files."""
         write_str(f"{basename}.str", "S", self.n, self.d)
         write_dat(f"{basename}.dat", self.features)
         write_nei(f"{basename}.nei", self.graph)
-        print(f"Exported: {basename}.{{str,dat,nei}}")
+        write_labels(f"{basename}.true.cf", self.labels)
+        print(f"Exported: {basename}.{{str,dat,nei,true.cf}}")
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +282,7 @@ class PottsImageData:
         return fig, axes
 
     def export(self, basename):
-        """Write basename.{str,dat,nei} files.
+        """Write basename.{str,dat,nei,true.cf} files.
 
         Uses image format ('I nl nc d') for .str and writes the 4-connectivity
         neighborhood for compatibility with spatial mode.
@@ -275,7 +290,8 @@ class PottsImageData:
         write_str(f"{basename}.str", "I", self.nl, self.nc, self.d)
         write_dat(f"{basename}.dat", self.features)
         write_nei(f"{basename}.nei", self.graph)
-        print(f"Exported: {basename}.{{str,dat,nei}}")
+        write_labels(f"{basename}.true.cf", self.labels)
+        print(f"Exported: {basename}.{{str,dat,nei,true.cf}}")
 
 
 # ---------------------------------------------------------------------------
