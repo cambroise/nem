@@ -18,9 +18,87 @@ NEM/
 ├── pynem/          # Python reimplementation (standalone package)
 │   ├── src/pynem/  # Package source
 │   └── tests/      # Test suite
-├── examples/       # Example data (essai dataset)
+├── examples/       # Example data and synthetic generators
+│   ├── generate.py           # SBMData, PottsImageData generators
+│   ├── example_sbm_200.py    # SBM graph example
+│   ├── example_potts_30x30.py # Potts image example
+│   ├── essai.*               # Original dataset (100 nodes, 3 vars)
+│   ├── sbm_200_3.*           # SBM: 200 nodes, 3 classes, 2D
+│   └── potts_30x30_3.*       # Potts: 30x30 grid, 3 classes, 2D
 └── README.md
 ```
+
+---
+
+## Examples
+
+### Synthetic data generation
+
+The `examples/generate.py` module provides two generators for creating
+synthetic datasets with known ground truth:
+
+```python
+from generate import SBMData, PottsImageData
+
+# Stochastic Block Model graph with Gaussian emissions
+sbm = SBMData(
+    n=200, k=3, d=2,
+    p_in=0.2, p_out=0.02,
+    centers=[[0, 0], [4, 4], [0, 4]],
+    sigma=1.0, seed=42,
+)
+sbm.export("sbm_200_3")   # writes .str, .dat, .nei, .true.cf
+sbm.plot()
+
+# Potts model on a grid with Gaussian emissions
+potts = PottsImageData(
+    nl=30, nc=30, k=3, beta=0.8,
+    centers=[[0, 0], [4, 4], [0, 4]],
+    sigma=1.0, seed=42,
+)
+potts.export("potts_30x30_3")
+potts.plot()
+```
+
+Each generator exports NEM-compatible files (`.str`, `.dat`, `.nei`) plus a
+`.true.cf` file containing the ground-truth labels for evaluation.
+
+### Clustering a graph (SBM example)
+
+```python
+import pynem
+
+G = pynem.io.read_graph("examples/sbm_200_3")
+model = pynem.NEM(n_clusters=3, beta=1.0, family="normal")
+model.fit(G)
+
+pynem.viz.plot_graph_clusters(G, model.labels_)
+```
+
+Or with the C implementation:
+
+```bash
+csrc/nem_exe examples/sbm_200_3 3
+```
+
+### Clustering an image (Potts example)
+
+```python
+import pynem
+
+G = pynem.io.read_graph("examples/potts_30x30_3")
+model = pynem.NEM(n_clusters=3, beta=1.0, family="normal")
+model.fit(G)
+```
+
+Or with the C implementation:
+
+```bash
+csrc/nem_exe examples/potts_30x30_3 3
+```
+
+On the Potts 30x30 dataset (900 pixels, 3 classes), both implementations
+recover the true labels with ~98% accuracy.
 
 ---
 
@@ -135,7 +213,7 @@ NEM expects files sharing the same base name:
 
 | File | Format |
 |---|---|
-| `.str` | `[Type] [N] [D]` — Type: `S` (spatial), `I` (image), `N` (non-spatial) |
+| `.str` | `S N D` or `N N D` (spatial/non-spatial) or `I Nl Nc D` (image grid) |
 | `.dat` | N x D matrix of feature vectors (space-separated) |
 | `.nei` | Adjacency list: first line = weighted flag, then `[NodeID] [NbNeighbors] [Neighbors...]` |
 

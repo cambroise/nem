@@ -13,13 +13,20 @@ def read_str(path):
     type_char : str
         'S' (spatial graph), 'I' (image grid), or 'N' (non-spatial).
     n : int
-        Number of nodes.
+        Number of nodes (nl*nc for images).
     d : int
         Number of variables per node.
     """
     with open(path) as f:
         parts = f.read().split()
-    return parts[0], int(parts[1]), int(parts[2])
+    type_char = parts[0]
+    if type_char == "I":
+        # Image format: I nl nc d
+        nl, nc, d = int(parts[1]), int(parts[2]), int(parts[3])
+        return type_char, nl * nc, d
+    else:
+        # Spatial/non-spatial: S n d or N n d
+        return type_char, int(parts[1]), int(parts[2])
 
 
 def read_dat(path, n, d):
