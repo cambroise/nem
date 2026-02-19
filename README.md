@@ -5,7 +5,7 @@ Hidden Markov Random Fields. Given a graph where each node carries a feature
 vector, NEM produces a partition that accounts for both the data and the
 spatial structure of the graph.
 
->The original C code  was written by Van Mo Dang in 1996 and the last C version date from (v1.07, 1999). Claude-code has helped to reactivate the code and to provide a python version. 
+>The original C code  was written by Van Mo Dang in 1996 and the last C version dates from 1999 (v1.07). Claude-code has helped to reactivate the code and to provide a python version. 
 
 **Reference:**
 Ambroise, C., Dang, V.M. and Govaert, G. (1997). Clustering of spatial data
