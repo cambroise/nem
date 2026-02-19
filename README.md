@@ -7,6 +7,11 @@ spatial structure of the graph.
 
 >The original C code  was written by  [Mô Van Dang](https://www.linkedin.com/in/m%C3%B4-dang-884b4950/) in 1996 and the last C version dates from 1999 (v1.07). Claude Code assisted in resurrecting the C code and developing a Python implementation. 
 
+
+The model, algorithm, and original code served as a foundation for PanGGOLiN (Partitioned PanGenome Graph Of Linked Neighbors), a bioinformatics software package dedicated to pangenome analysis—the complete set of genes found within a group of related organisms. Initiated in 2016, the project supports large-scale comparative analysis of bacterial genomes, with a focus on genome evolution, gene diversity, and the identification of stable and variable genomic regions. PPanGGOLiN relies on graph-based representations to model gene co-localization relationships across genomes ([Paggolin paper](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1007732), [PPanGGOLiN GitHub Repository](https://github.com/labgem/PPanGGOLiN))
+
+
+
 ## References
 
 - Ambroise, C., Dang, V. M., & Govaert, G. (1997).  
@@ -18,6 +23,8 @@ spatial structure of the graph.
   **Convergence Proof of an EM-type Algorithm for Spatial Clustering.**  
 *Pattern Recognition Letters*.  
   [PDF](https://ambroise.cloud/publications/arti_ambroise1998convergence/arti_ambroise1998convergence.pdf)
+
+
 
 ## Repository structure
 
