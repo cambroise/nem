@@ -5,12 +5,19 @@ Hidden Markov Random Fields. Given a graph where each node carries a feature
 vector, NEM produces a partition that accounts for both the data and the
 spatial structure of the graph.
 
->The original C code  was written by Van Mo Dang in 1996 and the last C version dates from 1999 (v1.07). Claude-code has helped to reactivate the code and to provide a python version. 
+>The original C code  was written by  [Mô Van Dang](https://www.linkedin.com/in/m%C3%B4-dang-884b4950/) in 1996 and the last C version dates from 1999 (v1.07). Claude Code assisted in resurrecting the C code and developing a Python implementation. 
 
-**Reference:**
-Ambroise, C., Dang, V.M. and Govaert, G. (1997). Clustering of spatial data
-by the EM algorithm. *geoENV I — Geostatistics for Environmental Applications*,
-Vol. 9, Kluwer Academic Publisher, pp. 493–504.
+## References
+
+- Ambroise, C., Dang, V. M., & Govaert, G. (1997).  
+  **Clustering of spatial data by the EM algorithm.**  
+  *geoENV I — Geostatistics for Environmental Applications*, 9, 493–504.  
+  [PDF](https://ambroise.cloud/publications/chap_ambroise1997clustering/chap_ambroise1997clustering.pdf)
+
+- Ambroise, C., & Govaert, G. (1998).
+  **Convergence Proof of an EM-type Algorithm for Spatial Clustering.**  
+*Pattern Recognition Letters*.  
+  [PDF](https://ambroise.cloud/publications/arti_ambroise1998convergence/arti_ambroise1998convergence.pdf)
 
 ## Repository structure
 
