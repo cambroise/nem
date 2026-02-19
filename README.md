@@ -24,7 +24,7 @@ NEM/
 │   ├── generate.py           # SBMData, PottsImageData generators
 │   ├── example_sbm_100.py    # SBM graph example (100 nodes, 2D)
 │   ├── example_sbm_200.py    # SBM graph example (200 nodes, 2D)
-│   ├── example_potts_30x30.py # Potts image example
+│   ├── example_potts_30x30.py # Potts image example (30×30 grid, 2D)
 │   └── essai.*               # Original dataset (100 nodes, 3 vars)
 └── README.md
 ```
@@ -84,6 +84,63 @@ Convergence of the NEM criterion U:
 
 On this dataset NEM recovers the true partition with high accuracy
 (ARI = 0.94) in 7 iterations.
+
+---
+
+## Example: Potts image with 30×30 grid
+
+This example generates a Potts Markov Random Field on a 30×30 pixel grid with
+3 classes and 2-dimensional Gaussian emissions, then clusters it with NEM.
+
+### Generate synthetic data
+
+```python
+from generate import PottsImageData
+
+potts = PottsImageData(
+    nl=30, nc=30, k=3, beta=0.8,
+    centers=[[0, 0], [3, 3], [0, 3]],
+    sigma=1.0, seed=42,
+)
+potts.export("potts_30x30_3")   # writes .str, .dat, .nei, .true.cf
+```
+
+### Run NEM and evaluate
+
+```python
+import pynem
+
+G = pynem.io.read_graph("examples/potts_30x30_3")
+model = pynem.NEM(n_clusters=3, beta=1.0, family="normal")
+model.fit(G)
+
+# Adjusted Rand Index (requires true labels)
+true_labels = potts.labels + 1  # convert to 1-based
+ari = pynem.metrics.adjusted_rand_index(true_labels, model.labels_)
+print(f"Adjusted Rand Index: {ari:.4f}")
+# Adjusted Rand Index: 0.7379
+```
+
+### Visualize results
+
+```python
+fig = pynem.viz.plot_results(G, model, true_labels=true_labels,
+                             var_names=["Variable 1", "Variable 2"])
+```
+
+The top row shows estimated vs true labels; the bottom row shows each
+dimension of the emission vector as a pixel image:
+
+![NEM results on Potts 30×30 grid](examples/potts_30x30_3_results.png)
+
+Convergence of the NEM criterion U:
+
+![Convergence](examples/potts_30x30_3_convergence.png)
+
+On this dataset NEM recovers the main spatial structure (ARI = 0.74),
+the lower score compared to the SBM example reflecting the harder
+segmentation task: the classes have overlapping emissions (σ = 1,
+center gap = 3) and the Potts prior creates irregular, non-convex regions.
 
 ---
 

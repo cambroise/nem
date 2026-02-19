@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 # Add parent dir so pynem is importable without install
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pynem" / "src"))
 
+
 import pynem
 from generate import SBMData
 
