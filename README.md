@@ -20,85 +20,68 @@ NEM/
 │   └── tests/      # Test suite
 ├── examples/       # Example data and synthetic generators
 │   ├── generate.py           # SBMData, PottsImageData generators
-│   ├── example_sbm_200.py    # SBM graph example
+│   ├── example_sbm_100.py    # SBM graph example (100 nodes, 2D)
+│   ├── example_sbm_200.py    # SBM graph example (200 nodes, 2D)
 │   ├── example_potts_30x30.py # Potts image example
-│   ├── essai.*               # Original dataset (100 nodes, 3 vars)
-│   ├── sbm_200_3.*           # SBM: 200 nodes, 3 classes, 2D
-│   └── potts_30x30_3.*       # Potts: 30x30 grid, 3 classes, 2D
+│   └── essai.*               # Original dataset (100 nodes, 3 vars)
 └── README.md
 ```
 
 ---
 
-## Examples
+## Example: SBM graph with 100 nodes
 
-### Synthetic data generation
+This example generates a Stochastic Block Model graph with 100 nodes,
+3 classes, and 2-dimensional Gaussian emissions, then clusters it with NEM.
 
-The `examples/generate.py` module provides two generators for creating
-synthetic datasets with known ground truth:
+### Generate synthetic data
 
 ```python
-from generate import SBMData, PottsImageData
+from generate import SBMData
 
-# Stochastic Block Model graph with Gaussian emissions
 sbm = SBMData(
-    n=200, k=3, d=2,
-    p_in=0.2, p_out=0.02,
+    n=100, k=3, d=2,
+    p_in=0.3, p_out=0.02,
     centers=[[0, 0], [4, 4], [0, 4]],
     sigma=1.0, seed=42,
 )
-sbm.export("sbm_200_3")   # writes .str, .dat, .nei, .true.cf
-sbm.plot()
-
-# Potts model on a grid with Gaussian emissions
-potts = PottsImageData(
-    nl=30, nc=30, k=3, beta=0.8,
-    centers=[[0, 0], [4, 4], [0, 4]],
-    sigma=1.0, seed=42,
-)
-potts.export("potts_30x30_3")
-potts.plot()
+sbm.export("sbm_100_2")   # writes .str, .dat, .nei, .true.cf
 ```
 
-Each generator exports NEM-compatible files (`.str`, `.dat`, `.nei`) plus a
-`.true.cf` file containing the ground-truth labels for evaluation.
-
-### Clustering a graph (SBM example)
+### Run NEM and evaluate
 
 ```python
 import pynem
 
-G = pynem.io.read_graph("examples/sbm_200_3")
+G = pynem.io.read_graph("examples/sbm_100_2")
 model = pynem.NEM(n_clusters=3, beta=1.0, family="normal")
 model.fit(G)
 
-pynem.viz.plot_graph_clusters(G, model.labels_)
+# Adjusted Rand Index (requires true labels)
+true_labels = sbm.labels + 1  # convert to 1-based
+ari = pynem.metrics.adjusted_rand_index(true_labels, model.labels_)
+print(f"Adjusted Rand Index: {ari:.4f}")
+# Adjusted Rand Index: 1.0000
 ```
 
-Or with the C implementation:
-
-```bash
-csrc/nem_exe examples/sbm_200_3 3
-```
-
-### Clustering an image (Potts example)
+### Visualize results
 
 ```python
-import pynem
-
-G = pynem.io.read_graph("examples/potts_30x30_3")
-model = pynem.NEM(n_clusters=3, beta=1.0, family="normal")
-model.fit(G)
+fig = pynem.viz.plot_results(G, model, true_labels=true_labels,
+                             var_names=["Variable 1", "Variable 2"])
 ```
 
-Or with the C implementation:
+The top row shows estimated vs true labels; the bottom row shows each
+dimension of the emission vector on the graph:
 
-```bash
-csrc/nem_exe examples/potts_30x30_3 3
-```
+![NEM results on SBM 100 nodes](examples/sbm_100_2_results.png)
 
-On the Potts 30x30 dataset (900 pixels, 3 classes), both implementations
-recover the true labels with ~98% accuracy.
+Convergence of the NEM criterion U:
+
+![Convergence](examples/sbm_100_2_convergence.png)
+
+On this dataset NEM recovers the true partition perfectly (ARI = 1.0) in
+7 iterations.
 
 ---
 
@@ -136,8 +119,17 @@ model.proportions_   # cluster proportions (K,)
 model.criteria_      # dict with U, D, G, L, M values
 
 # Visualization
-pynem.viz.plot_graph_clusters(G, model.labels_)
+fig = pynem.viz.plot_results(G, model)
 pynem.viz.plot_convergence(model.history_)
+```
+
+### Evaluation with simulated data
+
+When true labels are available (e.g. from `SBMData` or `PottsImageData`),
+compute the Adjusted Rand Index to quantify clustering accuracy:
+
+```python
+ari = pynem.metrics.adjusted_rand_index(true_labels, model.labels_)
 ```
 
 ### Features
@@ -173,6 +165,15 @@ model = pynem.NEM(
 )
 model.fit(G)
 ```
+
+### Visualization
+
+- `pynem.viz.plot_results(G, model, true_labels=...)` — estimated labels, true labels, and per-dimension feature views
+- `pynem.viz.plot_labels(G, labels)` — labels on graph or image
+- `pynem.viz.plot_feature(G, values)` — continuous values on graph or image
+- `pynem.viz.plot_convergence(history)` — criterion vs iteration
+- `pynem.viz.plot_membership(G, membership)` — soft membership heatmap
+- `pynem.viz.plot_cluster_centers(centers)` — parallel coordinates
 
 ### Criteria
 

@@ -5,6 +5,26 @@ import matplotlib.pyplot as plt
 import networkx as nx
 
 
+def _is_image(G):
+    """Check if graph represents an image grid."""
+    return G.graph.get("type", "").upper() == "I"
+
+
+def _get_image_dims(G):
+    """Get (nl, nc) for image graphs."""
+    return G.graph["nl"], G.graph["nc"]
+
+
+def _get_features_matrix(G):
+    """Extract (N, D) feature matrix from graph."""
+    N = G.number_of_nodes()
+    D = G.graph.get("d", None)
+    if D is None:
+        D = len(G.nodes[0]["features"])
+    X = np.array([G.nodes[i]["features"] for i in range(N)])
+    return X
+
+
 def plot_graph_clusters(G, labels, pos=None, ax=None, **kwargs):
     """Draw graph with nodes colored by cluster label.
 
@@ -144,3 +164,171 @@ def plot_cluster_centers(centers, labels=None, ax=None):
     ax.legend()
     ax.grid(True, alpha=0.3)
     return ax
+
+
+def plot_labels(G, labels, pos=None, ax=None, title="Labels", **kwargs):
+    """Display labels on graph or image.
+
+    For image graphs (type='I'), shows a 2D image.
+    For other graphs, draws nodes colored by label.
+
+    Parameters
+    ----------
+    G : nx.Graph
+    labels : array-like of shape (N,)
+        Cluster labels (1-based).
+    pos : dict or None
+        Node positions (graph mode only).
+    ax : matplotlib Axes or None
+    title : str
+    **kwargs : passed to nx.draw_networkx_nodes (graph mode).
+
+    Returns
+    -------
+    ax : matplotlib Axes
+    """
+    if ax is None:
+        _, ax = plt.subplots(1, 1, figsize=(6, 5))
+
+    labels = np.asarray(labels)
+    K = int(labels.max())
+    cmap = plt.cm.get_cmap("tab10", K)
+
+    if _is_image(G):
+        nl, nc = _get_image_dims(G)
+        img = (labels - 1).reshape(nl, nc)
+        ax.imshow(img, cmap=cmap, vmin=0, vmax=K - 1, interpolation="nearest")
+    else:
+        if pos is None:
+            pos = nx.spring_layout(G, seed=42)
+        nx.draw_networkx_edges(G, pos, ax=ax, alpha=0.2)
+        nx.draw_networkx_nodes(
+            G, pos, ax=ax,
+            node_color=labels - 1,
+            cmap=cmap,
+            vmin=0, vmax=K - 1,
+            node_size=kwargs.get("node_size", 60),
+            alpha=kwargs.get("alpha", 0.9),
+        )
+
+    ax.set_title(title)
+    ax.axis("off")
+    return ax
+
+
+def plot_feature(G, feature_values, pos=None, ax=None, title="Feature",
+                 cmap="viridis", **kwargs):
+    """Display a single feature (continuous) on graph or image.
+
+    Parameters
+    ----------
+    G : nx.Graph
+    feature_values : array-like of shape (N,)
+        Continuous values for each node.
+    pos : dict or None
+        Node positions (graph mode only).
+    ax : matplotlib Axes or None
+    title : str
+    cmap : str
+        Colormap name.
+    **kwargs : passed to nx.draw_networkx_nodes (graph mode).
+
+    Returns
+    -------
+    ax : matplotlib Axes
+    """
+    if ax is None:
+        _, ax = plt.subplots(1, 1, figsize=(6, 5))
+
+    values = np.asarray(feature_values)
+
+    if _is_image(G):
+        nl, nc = _get_image_dims(G)
+        img = values.reshape(nl, nc)
+        im = ax.imshow(img, cmap=cmap, interpolation="nearest")
+        plt.colorbar(im, ax=ax, shrink=0.8)
+    else:
+        if pos is None:
+            pos = nx.spring_layout(G, seed=42)
+        nx.draw_networkx_edges(G, pos, ax=ax, alpha=0.1)
+        nodes = nx.draw_networkx_nodes(
+            G, pos, ax=ax,
+            node_color=values,
+            cmap=plt.cm.get_cmap(cmap),
+            node_size=kwargs.get("node_size", 60),
+            alpha=kwargs.get("alpha", 0.9),
+        )
+        plt.colorbar(nodes, ax=ax, shrink=0.8)
+
+    ax.set_title(title)
+    ax.axis("off")
+    return ax
+
+
+def plot_results(G, model, true_labels=None, pos=None, var_names=None):
+    """Plot estimated labels and per-dimension feature views.
+
+    Creates a figure with:
+    - Row 1: estimated labels (+ true labels if provided)
+    - Row 2: one panel per emission dimension
+
+    For image graphs, uses imshow. For general graphs, uses node coloring.
+
+    Parameters
+    ----------
+    G : nx.Graph
+        Graph with 'features' attribute on nodes.
+    model : NEM
+        Fitted NEM model (must have labels_ attribute).
+    true_labels : array-like of shape (N,) or None
+        True labels (1-based) for comparison.
+    pos : dict or None
+        Node positions for graph layout.
+    var_names : list of str or None
+        Names for each feature dimension.
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    X = _get_features_matrix(G)
+    N, D = X.shape
+
+    if var_names is None:
+        var_names = [f"Variable {d + 1}" for d in range(D)]
+
+    # Compute layout once for graph mode
+    if not _is_image(G) and pos is None:
+        pos = nx.spring_layout(G, seed=42)
+
+    # Determine grid layout
+    has_true = true_labels is not None
+    n_label_cols = 2 if has_true else 1
+    n_cols = max(n_label_cols, D)
+    n_rows = 2
+
+    fig, axes = plt.subplots(n_rows, n_cols,
+                             figsize=(4.5 * n_cols, 4 * n_rows))
+    if n_cols == 1:
+        axes = axes.reshape(n_rows, 1)
+
+    # Row 1: labels
+    plot_labels(G, model.labels_, pos=pos, ax=axes[0, 0],
+                title="Estimated labels")
+    if has_true:
+        plot_labels(G, true_labels, pos=pos, ax=axes[0, 1],
+                    title="True labels")
+    # Hide unused label panels
+    for j in range(n_label_cols, n_cols):
+        axes[0, j].axis("off")
+
+    # Row 2: feature dimensions
+    for d in range(D):
+        plot_feature(G, X[:, d], pos=pos, ax=axes[1, d],
+                     title=var_names[d])
+    # Hide unused feature panels
+    for j in range(D, n_cols):
+        axes[1, j].axis("off")
+
+    fig.tight_layout()
+    return fig
