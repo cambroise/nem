@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 
 potts = PottsImageData(
     nl=30,
-    nc=30,
+    nc=50,
     k=3,
     beta=0.8,
-    centers=[[0, 0], [4, 4], [0, 4]],
+    centers=[[0, 0], [2, 2], [0, 2]],
     sigma=1.0,
     seed=42,
 )

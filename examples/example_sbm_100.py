@@ -20,8 +20,8 @@ from generate import SBMData
 
 sbm = SBMData(
     n=100, k=3, d=2,
-    p_in=0.3, p_out=0.02,
-    centers=[[0, 0], [4, 4], [0, 4]],
+    p_in=0.2, p_out=0.02,
+    centers=[[0, 0], [3, 3], [0, 3]],
     sigma=1.0, seed=42,
 )
 sbm.export(str(Path(__file__).parent / "sbm_100_2"))

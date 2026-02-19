@@ -5,6 +5,8 @@ Hidden Markov Random Fields. Given a graph where each node carries a feature
 vector, NEM produces a partition that accounts for both the data and the
 spatial structure of the graph.
 
+>The original C code  was written by Van Mo Dang in 1996 and the last C version date from (v1.07, 1999). Claude-code has helped to reactivate the code and to provide a python version. 
+
 **Reference:**
 Ambroise, C., Dang, V.M. and Govaert, G. (1997). Clustering of spatial data
 by the EM algorithm. *geoENV I — Geostatistics for Environmental Applications*,
@@ -41,8 +43,8 @@ from generate import SBMData
 
 sbm = SBMData(
     n=100, k=3, d=2,
-    p_in=0.3, p_out=0.02,
-    centers=[[0, 0], [4, 4], [0, 4]],
+    p_in=0.2, p_out=0.02,
+    centers=[[0, 0], [3, 3], [0, 3]],
     sigma=1.0, seed=42,
 )
 sbm.export("sbm_100_2")   # writes .str, .dat, .nei, .true.cf
@@ -61,7 +63,7 @@ model.fit(G)
 true_labels = sbm.labels + 1  # convert to 1-based
 ari = pynem.metrics.adjusted_rand_index(true_labels, model.labels_)
 print(f"Adjusted Rand Index: {ari:.4f}")
-# Adjusted Rand Index: 1.0000
+# Adjusted Rand Index: 0.9403
 ```
 
 ### Visualize results
@@ -80,8 +82,8 @@ Convergence of the NEM criterion U:
 
 ![Convergence](examples/sbm_100_2_convergence.png)
 
-On this dataset NEM recovers the true partition perfectly (ARI = 1.0) in
-7 iterations.
+On this dataset NEM recovers the true partition with high accuracy
+(ARI = 0.94) in 7 iterations.
 
 ---
 
@@ -217,6 +219,13 @@ NEM expects files sharing the same base name:
 | `.str` | `S N D` or `N N D` (spatial/non-spatial) or `I Nl Nc D` (image grid) |
 | `.dat` | N x D matrix of feature vectors (space-separated) |
 | `.nei` | Adjacency list: first line = weighted flag, then `[NodeID] [NbNeighbors] [Neighbors...]` |
+
+
+where 
+- N is the sample size
+- D is the number of features of each sample vector
+- Nl is the number of lines of the image (if the imput data is an image)
+- Nc is the number of columns of the image (if eh input data is an image)
 
 ### Output files
 
