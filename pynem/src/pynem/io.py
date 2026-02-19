@@ -99,7 +99,8 @@ def read_graph(basename):
         Graph where ``G.nodes[i]['features']`` is a numpy array of shape (D,).
     """
     basename = Path(basename)
-    type_char, n, d = read_str(str(basename) + ".str")
+    str_path = str(basename) + ".str"
+    type_char, n, d = read_str(str_path)
     X = read_dat(str(basename) + ".dat", n, d)
     G = read_nei(str(basename) + ".nei", n)
 
@@ -109,6 +110,13 @@ def read_graph(basename):
     G.graph["type"] = type_char
     G.graph["n"] = n
     G.graph["d"] = d
+
+    # Store image dimensions for visualization
+    if type_char == "I":
+        with open(str_path) as f:
+            parts = f.read().split()
+        G.graph["nl"] = int(parts[1])
+        G.graph["nc"] = int(parts[2])
 
     return G
 

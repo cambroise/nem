@@ -49,7 +49,7 @@ def plot_graph_clusters(G, labels, pos=None, ax=None, **kwargs):
 
     labels = np.asarray(labels)
     K = int(labels.max())
-    cmap = plt.cm.get_cmap("tab10", K)
+    cmap = plt.colormaps.get_cmap("tab10").resampled(K)
 
     nx.draw_networkx_edges(G, pos, ax=ax, alpha=0.2)
     nx.draw_networkx_nodes(
@@ -146,7 +146,7 @@ def plot_cluster_centers(centers, labels=None, ax=None):
 
     K, D = centers.shape
     x = np.arange(D)
-    cmap = plt.cm.get_cmap("tab10", K)
+    cmap = plt.colormaps.get_cmap("tab10").resampled(K)
 
     for k in range(K):
         ax.plot(x, centers[k], "o-", color=cmap(k), label=f"Class {k + 1}",
@@ -192,7 +192,7 @@ def plot_labels(G, labels, pos=None, ax=None, title="Labels", **kwargs):
 
     labels = np.asarray(labels)
     K = int(labels.max())
-    cmap = plt.cm.get_cmap("tab10", K)
+    cmap = plt.colormaps.get_cmap("tab10").resampled(K)
 
     if _is_image(G):
         nl, nc = _get_image_dims(G)
@@ -254,7 +254,7 @@ def plot_feature(G, feature_values, pos=None, ax=None, title="Feature",
         nodes = nx.draw_networkx_nodes(
             G, pos, ax=ax,
             node_color=values,
-            cmap=plt.cm.get_cmap(cmap),
+            cmap=plt.colormaps.get_cmap(cmap),
             node_size=kwargs.get("node_size", 60),
             alpha=kwargs.get("alpha", 0.9),
         )
