@@ -1,30 +1,55 @@
-"""Graph/neighborhood handling for NEM."""
+"""Graph/neighborhood handling for NEM.
+
+The neighborhood is stored once as a sparse CSR adjacency matrix ``A`` where
+``A[i, j]`` is the weight ``w_ij`` of edge ``i -> j`` as listed for node ``i``
+(the matrix is generally **not** symmetric — e.g. PPanGGOLiN's ``sm_degree``
+hub filter produces a directed neighborhood). The spatial context of all nodes
+is then the matrix product ``A @ C``:
+
+    context[i, k] = sum_{j in N(i)} w_ij * c_jk
+
+The same CSR arrays (``indptr``/``indices``/``data``) also back the per-node
+access used by the sequential (Gauss-Seidel) E-step.
+"""
 
 import numpy as np
-import networkx as nx
+import scipy.sparse as sp
 
 
 class NeighborhoodSystem:
-    """Efficient adjacency structure extracted from a networkx graph.
+    """Sparse adjacency structure extracted from a networkx graph.
 
     Parameters
     ----------
-    G : nx.Graph
-        Graph with optional 'weight' edge attribute (default 1.0).
+    G : nx.Graph or nx.DiGraph
+        Graph on nodes ``0..n-1`` with optional 'weight' edge attribute
+        (default 1.0). For a directed graph, row ``i`` of the adjacency lists
+        the successors of ``i``.
     """
 
     def __init__(self, G):
-        self._n = G.number_of_nodes()
-        # Build adjacency lists with weights
-        self._neighbors = []
-        self._max_neighbors = 0
-        for i in range(self._n):
-            neighs = []
+        n = G.number_of_nodes()
+        self._n = n
+
+        rows, cols, data = [], [], []
+        for i in range(n):
             for j in G.neighbors(i):
-                w = G.edges[i, j].get("weight", 1.0)
-                neighs.append((j, w))
-            self._neighbors.append(neighs)
-            self._max_neighbors = max(self._max_neighbors, len(neighs))
+                rows.append(i)
+                cols.append(j)
+                data.append(G.edges[i, j].get("weight", 1.0))
+
+        self.A = sp.csr_matrix(
+            (np.asarray(data, dtype=float),
+             (np.asarray(rows, dtype=np.int32), np.asarray(cols, dtype=np.int32))),
+            shape=(n, n),
+        )
+        # Cached CSR arrays for fast per-node access (Gauss-Seidel sweep).
+        self._indptr = self.A.indptr
+        self._indices = self.A.indices
+        self._data = self.A.data
+        self._max_neighbors = (
+            int(np.diff(self.A.indptr).max()) if n > 0 else 0
+        )
 
     @property
     def n_nodes(self):
@@ -35,24 +60,24 @@ class NeighborhoodSystem:
         return self._max_neighbors
 
     def neighbors(self, i):
-        """Return list of (index, weight) for neighbors of node i."""
-        return self._neighbors[i]
+        """Return list of (index, weight) for the neighbors of node i."""
+        s, e = self._indptr[i], self._indptr[i + 1]
+        return list(zip(self._indices[s:e].tolist(), self._data[s:e].tolist()))
 
     def spatial_context(self, i, C, K):
-        """Compute spatial context for node i.
+        """Spatial context for node i: ``sum_{j in N(i)} w_ij * C[j]``.
 
         Returns
         -------
         context : array of shape (K,)
-            context[k] = sum_{j in N(i)} w_ij * c_jk
         """
-        context = np.zeros(K)
-        for j, w in self._neighbors[i]:
-            context += w * C[j]
-        return context
+        s, e = self._indptr[i], self._indptr[i + 1]
+        if e == s:
+            return np.zeros(K)
+        return self._data[s:e] @ C[self._indices[s:e]]
 
     def compute_all_contexts(self, C):
-        """Compute spatial context for all nodes at once.
+        """Spatial context for all nodes at once: ``A @ C``.
 
         Parameters
         ----------
@@ -61,19 +86,10 @@ class NeighborhoodSystem:
         Returns
         -------
         contexts : (N, K) array
-            contexts[i, k] = sum_{j in N(i)} w_ij * c_jk
+            ``contexts[i, k] = sum_{j in N(i)} w_ij * c_jk``.
         """
-        N, K = C.shape
-        contexts = np.zeros((N, K))
-        for i in range(N):
-            for j, w in self._neighbors[i]:
-                contexts[i] += w * C[j]
-        return contexts
+        return self.A @ C
 
     def compute_G(self, C):
-        """Compute geographic cohesion criterion.
-
-        G = sum_i sum_k c_ik * context_ik
-        """
-        contexts = self.compute_all_contexts(C)
-        return (C * contexts).sum()
+        """Geographic cohesion criterion ``G = sum_i sum_k c_ik * context_ik``."""
+        return float((C * (self.A @ C)).sum())
