@@ -1,0 +1,3 @@
+[submodule "ppanggolin"]
+	path = ppanggolin
+	url = https://github.com/labgem/PPanGGOLiN
