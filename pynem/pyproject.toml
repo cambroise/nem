@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pynem"
-version = "0.2.0"
+version = "0.3.0"
 description = "Neighborhood EM for spatial clustering on graphs"
 requires-python = ">=3.9"
 license = "MIT"

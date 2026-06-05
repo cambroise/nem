@@ -31,14 +31,16 @@ The model, algorithm, and original code served as a foundation for PanGGOLiN (Pa
 ```
 NEM/
 ├── csrc/           # Original C implementation (v1.07)
-├── pynem/          # Python reimplementation (standalone package)
+├── pynem/          # Python reimplementation (standalone package, v0.3.0)
 │   ├── src/pynem/  # Package source
 │   └── tests/      # Test suite
+├── ppanggolin/     # PPanGGOLiN submodule (embeds the same NEM core)
 ├── examples/       # Example data and synthetic generators
 │   ├── generate.py           # SBMData, PottsImageData generators
 │   ├── example_sbm_100.py    # SBM graph example (100 nodes, 2D)
 │   ├── example_sbm_200.py    # SBM graph example (200 nodes, 2D)
 │   ├── example_potts_30x30.py # Potts image example (30×30 grid, 2D)
+│   ├── example_pangenome.py  # Pangenome partitioning (persistent/shell/cloud)
 │   └── essai.*               # Original dataset (100 nodes, 3 vars)
 └── README.md
 ```
@@ -171,6 +173,13 @@ cd pynem
 pip install -e ".[dev]"
 ```
 
+For the optional **Numba** acceleration of the sequential E-step (large
+speed-ups on big graphs; a pure-Python fallback is used otherwise):
+
+```bash
+pip install -e ".[fast]"
+```
+
 ### Quick start
 
 ```python
@@ -196,6 +205,32 @@ fig = pynem.viz.plot_results(G, model)
 pynem.viz.plot_convergence(model.history_)
 ```
 
+### Pangenome partitioning (PPanGGOLiN)
+
+[PPanGGOLiN](https://github.com/labgem/PPanGGOLiN) partitions prokaryotic
+pangenomes into **persistent / shell / cloud** gene families — and its
+partitioning step *is* the NEM algorithm. `pynem.partition_pangenome`
+reproduces that pipeline (Bernoulli model, `K=3`, `beta` rescaling, `sm_degree`
+hub filter, sequential E-step, P/S/C labelling), validated element-wise against
+the reference NEM C core embedded in PPanGGOLiN.
+
+```python
+from pynem import partition_pangenome
+
+# presence: (n_families, n_genomes) array of {0,1}; graph: contiguity nx.Graph
+res = partition_pangenome(presence, graph, K=3, beta=2.5)
+res["partition"]   # array of "P"/"S"/"C" per gene family
+res["membership"]  # soft classification (n_families, K)
+res["centers"]     # binary modes mu (K, n_genomes)
+res["criteria"]    # U, D, G, L, M
+```
+
+Run `python examples/example_pangenome.py` to reproduce the figure below
+(persistent / shell / cloud on a simulated pangenome, agreement 0.99 with the
+ground truth):
+
+![Pangenome partitioning](examples/pangenome_results.png)
+
 ### Evaluation with simulated data
 
 When true labels are available (e.g. from `SBMData` or `PottsImageData`),
@@ -214,8 +249,13 @@ ari = pynem.metrics.adjusted_rand_index(true_labels, model.labels_)
 | Dispersion models | `s__` (shared), `sk_` (per-class), `s_d` (per-variable), `skd` (full) |
 | Proportions | `p_` (equal), `pk` (free) |
 | Beta estimation | `fix`, `psgrad` (pseudo-gradient), `heu_d`, `heu_l` (heuristics) |
-| Initialization | `sort`, `random` (with multiple starts) |
+| Initialization | `sort`, `random` (multiple starts), `param` (from given parameters) |
+| Site update | `parallel` (Jacobi), `seq` (sequential Gauss-Seidel, NEM default) |
 | Missing data | `replace` (EM-style) or `ignore` |
+
+Robustness: empty classes are reinitialised k-means++ style (centre moved to the
+point farthest from the dominant class), and the sequential E-step is
+JIT-compiled with Numba when available (pure-Python fallback otherwise).
 
 ### API
 
@@ -230,7 +270,8 @@ model = pynem.NEM(
     dispersion="s__",       # s__ | sk_ | s_d | skd
     proportion="pk",        # p_ | pk
     beta_mode="fix",        # fix | psgrad | heu_d | heu_l
-    init="sort",            # sort | random
+    init="sort",            # sort | random | param
+    site_update="parallel", # parallel (Jacobi) | seq (Gauss-Seidel)
     n_init=1,               # random restarts (for init="random")
     max_iter=100,
     tol=1e-3,
