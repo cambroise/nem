@@ -257,6 +257,17 @@ Robustness: empty classes are reinitialised k-means++ style (centre moved to the
 point farthest from the dominant class), and the sequential E-step is
 JIT-compiled with Numba when available (pure-Python fallback otherwise).
 
+`fit` validates its inputs up front and raises a clear `ValueError`/`TypeError`
+instead of failing deep in the pipeline: a graph is required (`fit(X, graph=...)`
+or a single feature-carrying `nx.Graph`), its nodes must be the contiguous
+integers `0..N-1`, the node count must match `X`, and `1 <= K <= N`. Internally,
+the previously overloaded `EPSILON` is split into named floors with explicit
+intent — `PROB_FLOOR` (probabilities/proportions), `VAR_FLOOR` (dispersions),
+`ZERO_DISP_TOL` (degenerate point-mass dimensions) and `DIV_GUARD` (division
+guards); the values are unchanged, so the PPanGGOLiN reproduction and the
+example results above are preserved exactly. The per-iteration `log(p_k f_k)` is
+also computed once and shared between the E-step and the criteria.
+
 ### API
 
 The `NEM` class follows scikit-learn conventions:

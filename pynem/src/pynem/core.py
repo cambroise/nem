@@ -4,7 +4,8 @@ import numpy as np
 import networkx as nx
 
 from .models import (
-    Family, Dispersion, Proportion, EPSILON,
+    Family, Dispersion, Proportion,
+    PROB_FLOOR, VAR_FLOOR, DIV_GUARD,
     compute_log_density, estimate_parameters,
 )
 from .spatial import NeighborhoodSystem
@@ -101,16 +102,40 @@ class NEM:
 
         if isinstance(G_or_X, nx.Graph):
             G = G_or_X
+            self._check_graph(G)
             n = G.number_of_nodes()
+            if "features" not in G.nodes[0]:
+                raise ValueError("graph nodes must carry a 'features' attribute "
+                                 "when fitting on a graph alone")
             d = len(G.nodes[0]["features"])
             X = np.array([G.nodes[i]["features"] for i in range(n)],
                          dtype=float)
         else:
             X = np.asarray(G_or_X, dtype=float)
+            if X.ndim != 2:
+                raise ValueError(f"X must be 2-D (N, D); got shape {X.shape}")
             G = graph
+            if G is None:
+                raise ValueError("a graph is required: pass fit(X, graph=...) "
+                                 "or a single nx.Graph carrying node features")
+            self._check_graph(G)
             n, d = X.shape
+            if G.number_of_nodes() != n:
+                raise ValueError(f"graph has {G.number_of_nodes()} nodes but X "
+                                 f"has {n} rows; they must match")
 
         K = self.n_clusters
+        if d < 1:
+            raise ValueError("X must have at least one feature column (D >= 1)")
+        if not isinstance(K, (int, np.integer)) or K < 1:
+            raise ValueError(f"n_clusters must be an integer >= 1; got {K}")
+        if K > n:
+            raise ValueError(f"n_clusters={K} exceeds the number of nodes "
+                             f"N={n}; need K <= N")
+        if self.init == "param" and self.init_params is None:
+            raise ValueError("init='param' requires init_params=(centers, "
+                             "dispersions, proportions)")
+
         ns = NeighborhoodSystem(G)
 
         if self.beta_mode in ("heu_d", "heu_l"):
@@ -132,6 +157,26 @@ class NEM:
 
         self._store_result(best_result)
         return self
+
+    @staticmethod
+    def _check_graph(G):
+        """Validate that the graph is usable: nodes labelled 0..n-1.
+
+        pynem indexes nodes positionally (row i of X <-> node i, CSR row i),
+        so the node set must be exactly {0, ..., n-1}. networkx graphs with
+        string labels, gaps, or 1-based labels are rejected with a clear
+        message rather than failing obscurely deeper in the pipeline.
+        """
+        if not isinstance(G, nx.Graph):
+            raise TypeError(f"expected an nx.Graph (or DiGraph); got {type(G)}")
+        n = G.number_of_nodes()
+        if n == 0:
+            raise ValueError("graph has no nodes")
+        nodes = set(G.nodes)
+        if nodes != set(range(n)):
+            raise ValueError("graph nodes must be the contiguous integers "
+                             f"0..{n - 1}; relabel with "
+                             "networkx.convert_node_labels_to_integers")
 
     def predict(self, G_or_X=None):
         """Return hard labels."""
@@ -163,12 +208,21 @@ class NEM:
             if self.beta_mode == "psgrad":
                 beta = self._estimate_beta(C, ns, beta)
 
+            # log(p_k f_k(x_i)) depends only on the current parameters, so it is
+            # identical in the E-step and in the criteria below — compute it once.
+            log_pkfki = compute_log_density(
+                X, params["centers"], params["dispersions"],
+                params["proportions"], self.family,
+            )
+
             # E-step
             old_C = C.copy()
-            C = self._e_step(X, C, params, ns, beta, K, rng)
+            C = self._e_step(X, C, params, ns, beta, K, rng,
+                             log_pkfki=log_pkfki)
 
             # Compute criteria
-            criteria = self._compute_criteria(X, C, params, ns, beta)
+            criteria = self._compute_criteria(X, C, params, ns, beta,
+                                              log_pkfki=log_pkfki)
             history.append(criteria.copy())
 
             if self.verbose:
@@ -218,7 +272,7 @@ class NEM:
             params = {
                 "centers": np.asarray(centers, dtype=float),
                 "dispersions": np.maximum(np.asarray(dispersions, dtype=float),
-                                          EPSILON),
+                                          VAR_FLOOR),
                 "proportions": np.asarray(proportions, dtype=float),
             }
             log_pkfki = compute_log_density(
@@ -245,7 +299,7 @@ class NEM:
             # Pick K distinct data points as centers, then do one E-step
             observed = ~np.isnan(X)
             sample_disp = np.nanvar(X, axis=0)
-            sample_disp = np.maximum(sample_disp, EPSILON)
+            sample_disp = np.maximum(sample_disp, VAR_FLOOR)
 
             # Pick K distinct centers
             centers = np.zeros((K, D))
@@ -298,19 +352,23 @@ class NEM:
             return hard
         return c_i
 
-    def _e_step(self, X, C, params, ns, beta, K, rng):
+    def _e_step(self, X, C, params, ns, beta, K, rng, log_pkfki=None):
         """E-step: update classification (one sweep).
 
         With ``site_update='seq'`` the update is Gauss-Seidel (in place, index
         order) — the reference NEM behaviour. With ``'parallel'`` it is Jacobi
         (every node uses the classification from the start of the sweep).
+
+        ``log_pkfki`` (the (N, K) log(p_k f_k) for the current params) may be
+        supplied to avoid recomputing it when the caller already has it.
         """
         N = X.shape[0]
 
-        log_pkfki = compute_log_density(
-            X, params["centers"], params["dispersions"],
-            params["proportions"], self.family,
-        )
+        if log_pkfki is None:
+            log_pkfki = compute_log_density(
+                X, params["centers"], params["dispersions"],
+                params["proportions"], self.family,
+            )
 
         if self.site_update == "seq":
             # Gauss-Seidel: update CM in place, visiting nodes 0..N-1.
@@ -358,7 +416,7 @@ class NEM:
         if finite.any():
             num = np.exp(log_num[finite] - max_log[finite])
             total = num.sum(axis=1, keepdims=True)
-            total = np.maximum(total, EPSILON)
+            total = np.maximum(total, DIV_GUARD)
             C[finite] = num / total
         return C
 
@@ -390,7 +448,7 @@ class NEM:
             if abs(grad) < self.tol * N:
                 break
 
-            if step <= 0 and abs(d2) > EPSILON:
+            if step <= 0 and abs(d2) > DIV_GUARD:
                 # Newton step with damping factor 4
                 beta += grad / (4 * abs(d2))
             else:
@@ -400,20 +458,25 @@ class NEM:
 
         return beta
 
-    def _compute_criteria(self, X, C, params, ns, beta):
-        """Compute all criteria: U, D, G, L, M."""
+    def _compute_criteria(self, X, C, params, ns, beta, log_pkfki=None):
+        """Compute all criteria: U, D, G, L, M.
+
+        ``log_pkfki`` may be supplied (it depends only on ``params``) to reuse
+        the array already computed by the E-step in the same iteration.
+        """
         N, K = C.shape
-        log_pkfki = compute_log_density(
-            X, params["centers"], params["dispersions"],
-            params["proportions"], self.family,
-        )
+        if log_pkfki is None:
+            log_pkfki = compute_log_density(
+                X, params["centers"], params["dispersions"],
+                params["proportions"], self.family,
+            )
 
         # D (Hathaway) = sum_i sum_k c_ik * (log(pk*fki) - log(c_ik)), summed
         # only where c_ik > 0 (0·log0 = 0 by convention). This also avoids
         # 0·(-inf) = NaN when a class has zero dispersion on some variable
         # (e.g. a gene family present in every genome -> mode 1, dispersion 0),
         # which gives -inf density to non-members that are not assigned to it.
-        log_C = np.log(np.maximum(C, EPSILON))
+        log_C = np.log(np.maximum(C, PROB_FLOOR))
         mask = C > 0
         D = (C[mask] * (log_pkfki[mask] - log_C[mask])).sum()
 
@@ -431,7 +494,7 @@ class NEM:
         if finite.any():
             sum_exp = np.sum(np.exp(log_pkfki[finite] - max_log[finite]),
                              axis=1)
-            L = (max_log[finite].ravel() + np.log(np.maximum(sum_exp, EPSILON))).sum()
+            L = (max_log[finite].ravel() + np.log(np.maximum(sum_exp, PROB_FLOOR))).sum()
 
         # Z and M (Markovian pseudo-likelihood)
         beta_con = beta * contexts
@@ -448,7 +511,7 @@ class NEM:
         if self.convergence == "classification":
             return np.max(np.abs(C_new - C_old)) < self.tol
         elif self.convergence == "criterion":
-            if abs(crit_new["U"]) < EPSILON:
+            if abs(crit_new["U"]) < DIV_GUARD:
                 return True
             return abs(crit_new["U"] - crit_old["U"]) / abs(crit_new["U"]) < self.tol
         return False

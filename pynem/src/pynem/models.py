@@ -3,7 +3,23 @@
 import numpy as np
 from enum import Enum
 
-EPSILON = 1e-20
+# Three semantically distinct floors that used to share a single ``EPSILON``.
+# They are all kept at 1e-20 so the numerics are byte-for-byte unchanged (the
+# PPanGGOLiN reproduction and the Gaussian examples are preserved exactly); the
+# split only makes the *intent* explicit and gives a single place to retune one
+# without disturbing the others.
+PROB_FLOOR = 1e-20      # floor for probabilities/proportions before a log
+VAR_FLOOR = 1e-20       # floor for dispersions/variances (kept tiny to match
+                        # the reference C core, where a degenerate dimension is
+                        # handled by ZERO_DISP_TOL below, not by the floor)
+ZERO_DISP_TOL = 1e-20   # a dispersion <= this marks a degenerate (point-mass)
+                        # dimension: it contributes no density term, and an
+                        # observation off the mode there gets zero likelihood
+DIV_GUARD = 1e-20       # generic guard against division by zero (counts, sums)
+
+# Back-compat alias: external code (and older imports) may still reference
+# EPSILON. It maps to the generic division guard.
+EPSILON = DIV_GUARD
 
 # A class whose total (soft) membership falls below this is considered empty
 # and reinitialised (k-means++ style) by _reinit_empty_classes.
@@ -57,9 +73,9 @@ def compute_log_density(X, centers, dispersions, proportions, family):
     # exactly zero (log = -inf) when an observed variable has zero dispersion
     # yet the observation differs from the centre.
     for k in range(K):
-        log_pk = np.log(max(proportions[k], EPSILON))
+        log_pk = np.log(max(proportions[k], PROB_FLOOR))
         v = dispersions[k]                       # (D,)
-        zero_v = v <= EPSILON                    # (D,)
+        zero_v = v <= ZERO_DISP_TOL              # (D,)
         diff = Xf - centers[k]                   # (N, D)
         absdiff = np.abs(diff)
 
@@ -79,7 +95,7 @@ def compute_log_density(X, centers, dispersions, proportions, family):
         contrib = np.where(observed, contrib, 0.0)          # unobserved dims: no term
         log_fki = contrib.sum(axis=1)                       # (N,)
 
-        invalid = (observed & zero_v[None, :] & (absdiff > EPSILON)).any(axis=1)
+        invalid = (observed & zero_v[None, :] & (absdiff > ZERO_DISP_TOL)).any(axis=1)
         log_pkfki[:, k] = np.where(invalid, -np.inf, log_pk + log_fki)
 
     return log_pkfki
@@ -111,13 +127,13 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
 
     # Class sizes
     raw_N_K = C.sum(axis=0)            # (K,) before clamping, for empty detection
-    N_K = np.maximum(raw_N_K, EPSILON)
+    N_K = np.maximum(raw_N_K, DIV_GUARD)
 
     # Per-class, per-variable observed sizes
     N_KD = np.zeros((K, D))
     for k in range(K):
         N_KD[k] = (C[:, k:k+1] * observed).sum(axis=0)
-    N_KD = np.maximum(N_KD, EPSILON)
+    N_KD = np.maximum(N_KD, DIV_GUARD)
 
     # --- Centers ---
     # Bernoulli, like Laplace, uses the weighted MEDIAN as center estimator
@@ -157,14 +173,14 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
     )
 
     # Clamp dispersions from below
-    dispersions = np.maximum(dispersions, EPSILON)
+    dispersions = np.maximum(dispersions, VAR_FLOOR)
 
     # --- Proportions ---
     if proportion_model == Proportion.EQUAL:
         proportions = np.full(K, 1.0 / K)
     else:
         proportions = N_K / N
-        proportions = np.maximum(proportions, EPSILON)
+        proportions = np.maximum(proportions, PROB_FLOOR)
         proportions /= proportions.sum()
 
     # --- Recover collapsed (empty) classes -------------------------------
@@ -199,9 +215,9 @@ def _reinit_empty_classes(X, centers, dispersions, proportions, raw_N_K,
     Xf = np.where(observed, X, 0.0)
     populated = raw_N_K >= EMPTY_CLASS_WEIGHT
     if populated.any():
-        default_disp = np.maximum(dispersions[populated].mean(axis=0), EPSILON)
+        default_disp = np.maximum(dispersions[populated].mean(axis=0), VAR_FLOOR)
     else:  # pathological: every class empty -> fall back to sample dispersion
-        default_disp = np.maximum(np.nanvar(X, axis=0), EPSILON)
+        default_disp = np.maximum(np.nanvar(X, axis=0), VAR_FLOOR)
     dominant = int(np.argmax(raw_N_K))
 
     centers = centers.copy()
@@ -260,7 +276,7 @@ def _estimate_bernoulli_centers(X, C, observed):
     W_total = C.T @ obs        # (K, D) sum of weights over observed entries
     W_ones = C.T @ Xf          # (K, D) weighted count of 1s
     with np.errstate(invalid="ignore", divide="ignore"):
-        frac1 = np.where(W_total > 0, W_ones / np.maximum(W_total, EPSILON), 0.0)
+        frac1 = np.where(W_total > 0, W_ones / np.maximum(W_total, DIV_GUARD), 0.0)
     return (frac1 > 0.5).astype(float)
 
 
