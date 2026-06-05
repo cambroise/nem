@@ -124,7 +124,9 @@ class NEM:
         for run in range(n_runs):
             result = self._run_once(X, ns, K, rng)
             crit_val = result["criteria"]["U"]
-            if crit_val > best_crit:
+            # Always keep the only/first run, even if its criterion is not
+            # finite (NaN > -inf is False), so a single fit never returns None.
+            if best_result is None or crit_val > best_crit:
                 best_crit = crit_val
                 best_result = result
 
@@ -406,9 +408,14 @@ class NEM:
             params["proportions"], self.family,
         )
 
-        # D (Hathaway) = sum_i sum_k c_ik * (log(pk*fki) - log(c_ik))
+        # D (Hathaway) = sum_i sum_k c_ik * (log(pk*fki) - log(c_ik)), summed
+        # only where c_ik > 0 (0·log0 = 0 by convention). This also avoids
+        # 0·(-inf) = NaN when a class has zero dispersion on some variable
+        # (e.g. a gene family present in every genome -> mode 1, dispersion 0),
+        # which gives -inf density to non-members that are not assigned to it.
         log_C = np.log(np.maximum(C, EPSILON))
-        D = (C * (log_pkfki - log_C)).sum()
+        mask = C > 0
+        D = (C[mask] * (log_pkfki[mask] - log_C[mask])).sum()
 
         # G (geographic cohesion)
         contexts = ns.compute_all_contexts(C)

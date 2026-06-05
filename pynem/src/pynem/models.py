@@ -5,6 +5,10 @@ from enum import Enum
 
 EPSILON = 1e-20
 
+# A class whose total (soft) membership falls below this is considered empty
+# and reinitialised (k-means++ style) by _reinit_empty_classes.
+EMPTY_CLASS_WEIGHT = 1.0
+
 
 class Family(Enum):
     NORMAL = "normal"
@@ -106,8 +110,8 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
     observed = ~np.isnan(X)  # (N, D)
 
     # Class sizes
-    N_K = C.sum(axis=0)  # (K,)
-    N_K = np.maximum(N_K, EPSILON)
+    raw_N_K = C.sum(axis=0)            # (K,) before clamping, for empty detection
+    N_K = np.maximum(raw_N_K, EPSILON)
 
     # Per-class, per-variable observed sizes
     N_KD = np.zeros((K, D))
@@ -163,11 +167,61 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
         proportions = np.maximum(proportions, EPSILON)
         proportions /= proportions.sum()
 
+    # --- Recover collapsed (empty) classes -------------------------------
+    centers, dispersions, proportions = _reinit_empty_classes(
+        X, centers, dispersions, proportions, raw_N_K, observed
+    )
+
     return {
         "centers": centers,
         "dispersions": dispersions,
         "proportions": proportions,
     }
+
+
+def _reinit_empty_classes(X, centers, dispersions, proportions, raw_N_K,
+                          observed):
+    """k-means++ style recovery for classes that have collapsed (emptied).
+
+    A class whose total membership falls below ``EMPTY_CLASS_WEIGHT`` has its
+    centre moved to the observation farthest from the dominant (largest) class
+    centre — excluding points already chosen this round — its dispersion reset
+    to the average dispersion of the populated classes, and its proportion
+    floored so it can attract that point on the next E-step. The choice is
+    deterministic (argmax distance, no RNG), so runs where no class is empty are
+    left byte-for-byte unchanged (and PPanGGOLiN reproduction is preserved).
+    """
+    empty = np.where(raw_N_K < EMPTY_CLASS_WEIGHT)[0]
+    if empty.size == 0:
+        return centers, dispersions, proportions
+
+    N = X.shape[0]
+    Xf = np.where(observed, X, 0.0)
+    populated = raw_N_K >= EMPTY_CLASS_WEIGHT
+    if populated.any():
+        default_disp = np.maximum(dispersions[populated].mean(axis=0), EPSILON)
+    else:  # pathological: every class empty -> fall back to sample dispersion
+        default_disp = np.maximum(np.nanvar(X, axis=0), EPSILON)
+    dominant = int(np.argmax(raw_N_K))
+
+    centers = centers.copy()
+    dispersions = dispersions.copy()
+    proportions = proportions.copy()
+
+    # squared distance to the dominant centre, over observed variables
+    d2 = ((Xf - centers[dominant]) ** 2 * observed).sum(axis=1)
+    far_order = np.argsort(d2)[::-1]   # farthest observations first
+    used = set()
+    for k in empty:
+        far = next((int(i) for i in far_order if i not in used),
+                   int(far_order[0]))
+        used.add(far)
+        centers[k] = Xf[far]
+        dispersions[k] = default_disp
+        proportions[k] = max(proportions[k], 1.0 / N)
+
+    proportions = proportions / proportions.sum()
+    return centers, dispersions, proportions
 
 
 def _estimate_mean_centers(X, C, observed, K, D, N, N_K, N_KD, miss_mode,
