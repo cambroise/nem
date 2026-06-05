@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+fast = ["numba>=0.57"]  # JIT for the sequential E-step; pure-Python fallback otherwise
 
 [tool.setuptools.packages.find]
 where = ["src"]

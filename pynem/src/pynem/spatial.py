@@ -59,6 +59,10 @@ class NeighborhoodSystem:
     def max_neighbors(self):
         return self._max_neighbors
 
+    def csr_arrays(self):
+        """Return the (indptr, indices, data) CSR arrays of the adjacency."""
+        return self._indptr, self._indices, self._data
+
     def neighbors(self, i):
         """Return list of (index, weight) for the neighbors of node i."""
         s, e = self._indptr[i], self._indptr[i + 1]

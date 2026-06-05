@@ -8,6 +8,7 @@ from .models import (
     compute_log_density, estimate_parameters,
 )
 from .spatial import NeighborhoodSystem
+from ._fast import seq_sweep, HAS_NUMBA
 
 
 class NEM:
@@ -310,19 +311,26 @@ class NEM:
         )
 
         if self.site_update == "seq":
-            # Gauss-Seidel: update CM in place, visiting nodes 0..N-1
-            CM = C.copy()
+            # Gauss-Seidel: update CM in place, visiting nodes 0..N-1.
+            CM = np.array(C, dtype=np.float64, order="C")
+            if HAS_NUMBA and self.algorithm in ("nem", "ncem"):
+                indptr, indices, data = ns.csr_arrays()
+                return seq_sweep(
+                    CM, np.ascontiguousarray(log_pkfki, dtype=np.float64),
+                    indptr, indices, data,
+                    float(beta), self.algorithm == "ncem",
+                )
+            # Pure-Python fallback (used without numba, and for Gibbs/gem).
             for i in range(N):
                 context = ns.spatial_context(i, CM, K)
                 c_i = self._normalize_local(log_pkfki[i] + beta * context, K)
                 CM[i] = self._harden_node(c_i, K, rng)
             return CM
 
-        # Parallel (Jacobi): all nodes from the previous classification
-        new_C = np.zeros((N, K))
-        for i in range(N):
-            context = ns.spatial_context(i, C, K)
-            new_C[i] = self._normalize_local(log_pkfki[i] + beta * context, K)
+        # Parallel (Jacobi): all nodes from the previous classification,
+        # vectorised — context = A @ C, then a single log-sum-exp normalisation.
+        contexts = ns.compute_all_contexts(C)
+        new_C = self._normalize_membership(log_pkfki, beta * contexts)
 
         if self.algorithm == "ncem":
             hard = np.zeros_like(new_C)
