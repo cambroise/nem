@@ -42,65 +42,41 @@ def compute_log_density(X, centers, dispersions, proportions, family):
     """
     N, D = X.shape
     K = centers.shape[0]
-    log_pkfki = np.zeros((N, K))
+    log_pkfki = np.empty((N, K))
 
-    # Mask for observed (non-NaN) values
-    observed = ~np.isnan(X)  # (N, D)
+    observed = ~np.isnan(X)            # (N, D)
+    Xf = np.where(observed, X, 0.0)    # NaN -> 0 (these terms are masked out)
 
+    # Vectorised over D; the K loop is cheap (K is small). For each class we
+    # build the per-(observation, variable) log-density contributions, zero out
+    # unobserved and zero-dispersion dimensions, then sum over D. A density is
+    # exactly zero (log = -inf) when an observed variable has zero dispersion
+    # yet the observation differs from the centre.
     for k in range(K):
         log_pk = np.log(max(proportions[k], EPSILON))
+        v = dispersions[k]                       # (D,)
+        zero_v = v <= EPSILON                    # (D,)
+        diff = Xf - centers[k]                   # (N, D)
+        absdiff = np.abs(diff)
 
         if family == Family.NORMAL:
-            # log f_k(x_i) = -0.5 * sum_d [log(2π v_kd) + (x_d - m_kd)² / v_kd]
-            log_fki = np.zeros(N)
-            valid = np.ones(N, dtype=bool)
-            for d in range(D):
-                obs_d = observed[:, d]
-                v = dispersions[k, d]
-                if v <= EPSILON:
-                    # Points with non-zero deviation get -inf density
-                    diff = np.where(obs_d, np.abs(X[:, d] - centers[k, d]), 0.0)
-                    valid &= ~(obs_d & (diff > EPSILON))
-                    continue
-                log_fki[obs_d] -= 0.5 * (
-                    np.log(2 * np.pi * v)
-                    + (X[obs_d, d] - centers[k, d]) ** 2 / v
-                )
-            log_pkfki[:, k] = np.where(valid, log_pk + log_fki, -np.inf)
-
+            # -0.5 [ log(2π v) + (x - m)² / v ]
+            safe_v = np.where(zero_v, 1.0, v)
+            contrib = -0.5 * (np.log(2 * np.pi * safe_v) + diff * diff / safe_v)
         elif family == Family.LAPLACE:
-            # log f_k(x_i) = -sum_d [log(2 v_kd) + |x_d - m_kd| / v_kd]
-            log_fki = np.zeros(N)
-            valid = np.ones(N, dtype=bool)
-            for d in range(D):
-                obs_d = observed[:, d]
-                v = dispersions[k, d]
-                if v <= EPSILON:
-                    diff = np.where(obs_d, np.abs(X[:, d] - centers[k, d]), 0.0)
-                    valid &= ~(obs_d & (diff > EPSILON))
-                    continue
-                log_fki[obs_d] -= (
-                    np.log(2 * v)
-                    + np.abs(X[obs_d, d] - centers[k, d]) / v
-                )
-            log_pkfki[:, k] = np.where(valid, log_pk + log_fki, -np.inf)
+            # -[ log(2 v) + |x - m| / v ]
+            safe_v = np.where(zero_v, 1.0, v)
+            contrib = -(np.log(2 * safe_v) + absdiff / safe_v)
+        else:  # BERNOULLI: -[ -log(1 - v) + |x - m| log((1 - v) / v) ]
+            safe_v = np.where(zero_v, 0.5, v)
+            contrib = np.log(1 - safe_v) - absdiff * np.log((1 - safe_v) / safe_v)
 
-        elif family == Family.BERNOULLI:
-            # log f_k(x_i) = -sum_d [-log(1-v_kd) + |x_d-m_kd|*log((1-v_kd)/v_kd)]
-            log_fki = np.zeros(N)
-            valid = np.ones(N, dtype=bool)
-            for d in range(D):
-                obs_d = observed[:, d]
-                v = dispersions[k, d]
-                absdif = np.where(obs_d, np.abs(X[:, d] - centers[k, d]), 0.0)
-                if v <= EPSILON:
-                    valid &= ~(obs_d & (absdif > EPSILON))
-                    continue
-                log_fki[obs_d] -= (
-                    -np.log(1 - v)
-                    + absdif[obs_d] * np.log((1 - v) / v)
-                )
-            log_pkfki[:, k] = np.where(valid, log_pk + log_fki, -np.inf)
+        contrib = np.where(zero_v[None, :], 0.0, contrib)   # zero-disp dims: no term
+        contrib = np.where(observed, contrib, 0.0)          # unobserved dims: no term
+        log_fki = contrib.sum(axis=1)                       # (N,)
+
+        invalid = (observed & zero_v[None, :] & (absdiff > EPSILON)).any(axis=1)
+        log_pkfki[:, k] = np.where(invalid, -np.inf, log_pk + log_fki)
 
     return log_pkfki
 
@@ -140,12 +116,14 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
     N_KD = np.maximum(N_KD, EPSILON)
 
     # --- Centers ---
-    # Bernoulli, like Laplace, uses the weighted MEDIAN as center estimator.
-    # For 0/1 data the median is the binary MODE (0 or 1), which is what the
-    # reference NEM C code does: FAMILY_BERNOULLI is routed to EstimParaLaplace
-    # (nem_mod.c). A continuous mean would not match the Bernoulli density,
-    # whose |x - m| term is integer-valued in the C code.
-    if family in (Family.LAPLACE, Family.BERNOULLI):
+    # Bernoulli, like Laplace, uses the weighted MEDIAN as center estimator
+    # (the reference NEM C code routes FAMILY_BERNOULLI to EstimParaLaplace).
+    # For 0/1 data the weighted median is the binary MODE, which equals
+    # thresholding the C-weighted fraction of 1s at 0.5 — computed here as two
+    # matmuls, with no per-(k,d) sort (see _estimate_bernoulli_centers).
+    if family == Family.BERNOULLI:
+        centers = _estimate_bernoulli_centers(X, C, observed)
+    elif family == Family.LAPLACE:
         centers = _estimate_laplace_centers(X, C, observed, K, D, N_K)
     else:
         centers = _estimate_mean_centers(X, C, observed, K, D, N, N_K, N_KD,
@@ -209,6 +187,27 @@ def _estimate_mean_centers(X, C, observed, K, D, N, N_K, N_KD, miss_mode,
             centers[k] = weighted_sum / N_KD[k]
 
     return centers
+
+
+def _estimate_bernoulli_centers(X, C, observed):
+    """Bernoulli center = binary mode (weighted median of {0,1}), vectorised.
+
+    For 0/1 data the C-weighted median equals 1 iff the weighted fraction of 1s
+    exceeds 0.5, which is exactly what the weighted median returns (ties at 0.5
+    map to 0, as in ``_estimate_laplace_centers``). Computed with two matmuls
+    instead of a per-(class, variable) sort.
+
+    Returns
+    -------
+    centers : (K, D) array of {0.0, 1.0}
+    """
+    Xf = np.where(observed, X, 0.0)
+    obs = observed.astype(float)
+    W_total = C.T @ obs        # (K, D) sum of weights over observed entries
+    W_ones = C.T @ Xf          # (K, D) weighted count of 1s
+    with np.errstate(invalid="ignore", divide="ignore"):
+        frac1 = np.where(W_total > 0, W_ones / np.maximum(W_total, EPSILON), 0.0)
+    return (frac1 > 0.5).astype(float)
 
 
 def _estimate_laplace_centers(X, C, observed, K, D, N_K):
