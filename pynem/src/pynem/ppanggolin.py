@@ -137,7 +137,8 @@ def _assign_partition(c_i, K):
 
 
 def partition_pangenome(presence, graph, K=3, beta=2.5, free_dispersion=False,
-                        sm_degree=10, max_iter=100, tol=0.01):
+                        sm_degree=10, max_iter=100, tol=0.01,
+                        genome_weights=None):
     """Partition gene families into persistent / shell / cloud, à la PPanGGOLiN.
 
     Parameters
@@ -159,6 +160,11 @@ def partition_pangenome(presence, graph, K=3, beta=2.5, free_dispersion=False,
         Maximum NEM iterations.
     tol : float
         Classification-change convergence threshold (PPanGGOLiN uses 0.01).
+    genome_weights : (n_org,) array-like or None
+        Per-genome (per-column) weights ``w_j > 0`` for the *weighted* NEM,
+        e.g. to down-weight redundant genomes from an over-sampled clade so the
+        partition reflects biology rather than sampling. ``None`` (default) =
+        all weights 1, the standard PPanGGOLiN-faithful behaviour.
 
     Returns
     -------
@@ -195,6 +201,7 @@ def partition_pangenome(presence, graph, K=3, beta=2.5, free_dispersion=False,
         init="param",
         init_params=init_params,
         site_update="seq",
+        feature_weights=genome_weights,
         convergence="classification",
         tol=tol,
         missing="ignore",
