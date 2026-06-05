@@ -31,7 +31,7 @@ The model, algorithm, and original code served as a foundation for PanGGOLiN (Pa
 ```
 NEM/
 ├── csrc/           # Original C implementation (v1.07)
-├── pynem/          # Python reimplementation (standalone package, v0.3.0)
+├── pynem/          # Python reimplementation (standalone package, v0.3.1)
 │   ├── src/pynem/  # Package source
 │   └── tests/      # Test suite
 ├── ppanggolin/     # PPanGGOLiN submodule (embeds the same NEM core)
