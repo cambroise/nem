@@ -140,7 +140,12 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
     N_KD = np.maximum(N_KD, EPSILON)
 
     # --- Centers ---
-    if family == Family.LAPLACE:
+    # Bernoulli, like Laplace, uses the weighted MEDIAN as center estimator.
+    # For 0/1 data the median is the binary MODE (0 or 1), which is what the
+    # reference NEM C code does: FAMILY_BERNOULLI is routed to EstimParaLaplace
+    # (nem_mod.c). A continuous mean would not match the Bernoulli density,
+    # whose |x - m| term is integer-valued in the C code.
+    if family in (Family.LAPLACE, Family.BERNOULLI):
         centers = _estimate_laplace_centers(X, C, observed, K, D, N_K)
     else:
         centers = _estimate_mean_centers(X, C, observed, K, D, N, N_K, N_KD,

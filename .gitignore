@@ -51,3 +51,6 @@ Thumbs.db
 .svn/
 CLAUDE.md
 commands-tmp.md
+
+# Local exploratory notebooks (not for github)
+notebooks_local/

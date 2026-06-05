@@ -30,7 +30,17 @@ class NEM:
     beta_mode : str
         'fix', 'psgrad', 'heu_d', 'heu_l'.
     init : str
-        'sort' or 'random'.
+        'sort', 'random', or 'param' (initialize from given parameters,
+        like NEM's INIT_PARAM_FILE — requires ``init_params``).
+    init_params : tuple or None
+        ``(centers, dispersions, proportions)`` used when ``init='param'``.
+        ``centers`` and ``dispersions`` have shape (K, D), ``proportions`` (K,).
+    site_update : str
+        'parallel' (Jacobi: all nodes updated from the previous classification)
+        or 'seq' (Gauss-Seidel: nodes updated in place, in index order, so a
+        node sees the already-updated memberships of earlier neighbors). The
+        reference NEM C code uses 'seq' (DEFAULT_UPDATE = UPDATE_SEQ); pynem
+        keeps 'parallel' as default for backward compatibility.
     n_init : int
         Number of random initializations (only for init='random').
     max_iter : int
@@ -49,7 +59,8 @@ class NEM:
 
     def __init__(self, n_clusters=2, beta=1.0, algorithm="nem",
                  family="normal", dispersion="s__", proportion="pk",
-                 beta_mode="fix", init="sort", n_init=1,
+                 beta_mode="fix", init="sort", init_params=None,
+                 site_update="parallel", n_init=1,
                  max_iter=100, tol=1e-3, convergence="classification",
                  missing="replace", random_state=None, verbose=0):
         self.n_clusters = n_clusters
@@ -60,6 +71,8 @@ class NEM:
         self.proportion = Proportion(proportion)
         self.beta_mode = beta_mode
         self.init = init
+        self.init_params = init_params
+        self.site_update = site_update
         self.n_init = n_init
         self.max_iter = max_iter
         self.tol = tol
@@ -190,7 +203,29 @@ class NEM:
         N, D = X.shape
         C = np.zeros((N, K))
 
-        if self.init == "sort":
+        if self.init == "param":
+            # Initialize from given parameters, mirroring NEM's
+            # ComputePartitionFromPara(Needinit=1): a "blind" E-step with
+            # beta=0 (pure mixture posterior), then one spatial E-step at the
+            # actual beta.
+            if self.init_params is None:
+                raise ValueError("init='param' requires init_params=("
+                                 "centers, dispersions, proportions)")
+            centers, dispersions, proportions = self.init_params
+            params = {
+                "centers": np.asarray(centers, dtype=float),
+                "dispersions": np.maximum(np.asarray(dispersions, dtype=float),
+                                          EPSILON),
+                "proportions": np.asarray(proportions, dtype=float),
+            }
+            log_pkfki = compute_log_density(
+                X, params["centers"], params["dispersions"],
+                params["proportions"], self.family,
+            )
+            C_blind = self._normalize_membership(log_pkfki, np.zeros((N, K)))
+            C = self._e_step(X, C_blind, params, ns, self.beta, K, rng)
+
+        elif self.init == "sort":
             # Sort by first variable, partition into K equal groups
             sorted_var = 0
             vals = X[:, sorted_var].copy()
@@ -238,8 +273,35 @@ class NEM:
 
         return C
 
+    def _normalize_local(self, log_num, K):
+        """Normalize one node's log-numerators into a membership vector."""
+        max_log = np.max(log_num)
+        if np.isfinite(max_log):
+            num = np.exp(log_num - max_log)
+            total = num.sum()
+            if total > 0:
+                return num / total
+        return np.full(K, 1.0 / K)
+
+    def _harden_node(self, c_i, K, rng):
+        """Apply the C-step (ncem/gem) to a single node's membership."""
+        if self.algorithm == "ncem":
+            hard = np.zeros(K)
+            hard[np.argmax(c_i)] = 1.0
+            return hard
+        elif self.algorithm == "gem":
+            hard = np.zeros(K)
+            hard[rng.choice(K, p=c_i)] = 1.0
+            return hard
+        return c_i
+
     def _e_step(self, X, C, params, ns, beta, K, rng):
-        """E-step: update classification."""
+        """E-step: update classification (one sweep).
+
+        With ``site_update='seq'`` the update is Gauss-Seidel (in place, index
+        order) — the reference NEM behaviour. With ``'parallel'`` it is Jacobi
+        (every node uses the classification from the start of the sweep).
+        """
         N = X.shape[0]
 
         log_pkfki = compute_log_density(
@@ -247,35 +309,26 @@ class NEM:
             params["proportions"], self.family,
         )
 
+        if self.site_update == "seq":
+            # Gauss-Seidel: update CM in place, visiting nodes 0..N-1
+            CM = C.copy()
+            for i in range(N):
+                context = ns.spatial_context(i, CM, K)
+                c_i = self._normalize_local(log_pkfki[i] + beta * context, K)
+                CM[i] = self._harden_node(c_i, K, rng)
+            return CM
+
+        # Parallel (Jacobi): all nodes from the previous classification
         new_C = np.zeros((N, K))
-
         for i in range(N):
-            # Spatial context from current classification
             context = ns.spatial_context(i, C, K)
+            new_C[i] = self._normalize_local(log_pkfki[i] + beta * context, K)
 
-            # log(numerator) = log(pk*fki) + beta * context_k
-            log_num = log_pkfki[i] + beta * context
-
-            # Normalize using log-sum-exp trick
-            max_log = np.max(log_num)
-            if np.isfinite(max_log):
-                num = np.exp(log_num - max_log)
-                total = num.sum()
-                if total > 0:
-                    new_C[i] = num / total
-                else:
-                    new_C[i] = 1.0 / K
-            else:
-                new_C[i] = 1.0 / K
-
-        # Algorithm variant
         if self.algorithm == "ncem":
-            # Harden: assign to argmax
             hard = np.zeros_like(new_C)
             hard[np.arange(N), np.argmax(new_C, axis=1)] = 1.0
             new_C = hard
         elif self.algorithm == "gem":
-            # Gibbs: sample from membership probabilities
             hard = np.zeros_like(new_C)
             for i in range(N):
                 k = rng.choice(K, p=new_C[i])
