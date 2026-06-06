@@ -43,6 +43,14 @@ class NEM:
         node sees the already-updated memberships of earlier neighbors). The
         reference NEM C code uses 'seq' (DEFAULT_UPDATE = UPDATE_SEQ); pynem
         keeps 'parallel' as default for backward compatibility.
+    feature_weights : array-like of shape (D,) or None
+        Per-variable weights ``w_j > 0`` for the *weighted* NEM (each feature/
+        column contributes ``w_j`` times to the data fit). ``None`` (default)
+        means all weights equal 1, i.e. the standard NEM — recovered exactly.
+        Useful e.g. to down-weight redundant genomes in a pangenome so the
+        partition reflects biology rather than sampling (see the weighted-NEM
+        note). The M-step is unchanged by the weights except for the pooled
+        dispersion models ``s__``/``sk_``.
     n_init : int
         Number of random initializations (only for init='random').
     max_iter : int
@@ -62,7 +70,7 @@ class NEM:
     def __init__(self, n_clusters=2, beta=1.0, algorithm="nem",
                  family="normal", dispersion="s__", proportion="pk",
                  beta_mode="fix", init="sort", init_params=None,
-                 site_update="parallel", n_init=1,
+                 site_update="parallel", feature_weights=None, n_init=1,
                  max_iter=100, tol=1e-3, convergence="classification",
                  missing="replace", random_state=None, verbose=0):
         self.n_clusters = n_clusters
@@ -75,6 +83,10 @@ class NEM:
         self.init = init
         self.init_params = init_params
         self.site_update = site_update
+        self.feature_weights = feature_weights
+        # Validated (D,) weight array, or None for the exact unweighted path.
+        # Set in fit(); defaulted here so direct _initialize() calls also work.
+        self._weights = None
         self.n_init = n_init
         self.max_iter = max_iter
         self.tol = tol
@@ -135,6 +147,20 @@ class NEM:
         if self.init == "param" and self.init_params is None:
             raise ValueError("init='param' requires init_params=(centers, "
                              "dispersions, proportions)")
+
+        # Per-variable weights for the weighted NEM. ``None`` keeps the exact
+        # unweighted path (no array multiply); otherwise validate shape > 0.
+        if self.feature_weights is None:
+            self._weights = None
+        else:
+            w = np.asarray(self.feature_weights, dtype=float)
+            if w.shape != (d,):
+                raise ValueError(f"feature_weights must have shape ({d},) to "
+                                 f"match the {d} features; got {w.shape}")
+            if np.any(w < 0) or not np.all(np.isfinite(w)):
+                raise ValueError("feature_weights must be finite and "
+                                 "non-negative")
+            self._weights = w
 
         ns = NeighborhoodSystem(G)
 
@@ -202,6 +228,7 @@ class NEM:
                 miss_mode=self.missing,
                 old_centers=params["centers"] if iteration > 0 else None,
                 old_dispersions=params["dispersions"] if iteration > 0 else None,
+                weights=self._weights,
             ) if iteration > 0 else self._first_m_step(X, C)
 
             # Beta estimation (pseudo-gradient)
@@ -212,7 +239,7 @@ class NEM:
             # identical in the E-step and in the criteria below — compute it once.
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family,
+                params["proportions"], self.family, weights=self._weights,
             )
 
             # E-step
@@ -252,7 +279,7 @@ class NEM:
         """First M-step (no old parameters)."""
         return estimate_parameters(
             X, C, self.family, self.dispersion, self.proportion,
-            miss_mode=self.missing,
+            miss_mode=self.missing, weights=self._weights,
         )
 
     def _initialize(self, X, ns, K, rng):
@@ -277,7 +304,7 @@ class NEM:
             }
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family,
+                params["proportions"], self.family, weights=self._weights,
             )
             C_blind = self._normalize_membership(log_pkfki, np.zeros((N, K)))
             C = self._e_step(X, C_blind, params, ns, self.beta, K, rng)
@@ -323,7 +350,8 @@ class NEM:
 
             # One E-step to get initial classification
             log_pkfki = compute_log_density(
-                X, centers, dispersions, proportions, self.family
+                X, centers, dispersions, proportions, self.family,
+                weights=self._weights,
             )
             # Without spatial term (beta=0 for init)
             C = self._normalize_membership(log_pkfki, np.zeros((N, K)))
@@ -367,7 +395,7 @@ class NEM:
         if log_pkfki is None:
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family,
+                params["proportions"], self.family, weights=self._weights,
             )
 
         if self.site_update == "seq":
@@ -468,7 +496,7 @@ class NEM:
         if log_pkfki is None:
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family,
+                params["proportions"], self.family, weights=self._weights,
             )
 
         # D (Hathaway) = sum_i sum_k c_ik * (log(pk*fki) - log(c_ik)), summed

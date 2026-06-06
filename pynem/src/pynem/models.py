@@ -44,7 +44,8 @@ class Proportion(Enum):
     FREE = "pk"   # free proportions
 
 
-def compute_log_density(X, centers, dispersions, proportions, family):
+def compute_log_density(X, centers, dispersions, proportions, family,
+                        weights=None):
     """Compute log(p_k * f_k(x_i)) for all i and k.
 
     Parameters
@@ -54,6 +55,12 @@ def compute_log_density(X, centers, dispersions, proportions, family):
     dispersions : (K, D) array
     proportions : (K,) array
     family : Family enum
+    weights : (D,) array or None
+        Per-variable weights ``w_j > 0`` for the *weighted* NEM. Each variable's
+        log-density contribution is multiplied by ``w_j`` before summing over D
+        (a variable with ``w_j`` acts as if replicated ``w_j`` times). ``None``
+        means all weights equal 1, i.e. the standard unweighted density —
+        recovered byte-for-byte (the multiply is skipped entirely).
 
     Returns
     -------
@@ -93,9 +100,19 @@ def compute_log_density(X, centers, dispersions, proportions, family):
 
         contrib = np.where(zero_v[None, :], 0.0, contrib)   # zero-disp dims: no term
         contrib = np.where(observed, contrib, 0.0)          # unobserved dims: no term
+        if weights is not None:
+            contrib = contrib * weights[None, :]            # weighted NEM: w_j per variable
         log_fki = contrib.sum(axis=1)                       # (N,)
 
-        invalid = (observed & zero_v[None, :] & (absdiff > ZERO_DISP_TOL)).any(axis=1)
+        # A zero-dispersion (point-mass) dimension gives -inf density to an
+        # off-mode observation -- UNLESS that variable is weighted out (w_j = 0),
+        # in which case it must be ignored entirely (the note's w_j=0 = variable
+        # selection limit). weights=None -> all variables active -> exact old
+        # behaviour, so the PPanGGOLiN reproduction is unaffected.
+        active = (np.ones(D, dtype=bool) if weights is None
+                  else weights > 0)
+        invalid = (observed & zero_v[None, :] & (absdiff > ZERO_DISP_TOL)
+                   & active[None, :]).any(axis=1)
         log_pkfki[:, k] = np.where(invalid, -np.inf, log_pk + log_fki)
 
     return log_pkfki
@@ -103,7 +120,7 @@ def compute_log_density(X, centers, dispersions, proportions, family):
 
 def estimate_parameters(X, C, family, dispersion_model, proportion_model,
                         miss_mode="replace", old_centers=None,
-                        old_dispersions=None):
+                        old_dispersions=None, weights=None):
     """M-step: estimate model parameters from soft classification.
 
     Parameters
@@ -116,6 +133,13 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
     miss_mode : str — 'replace' or 'ignore'
     old_centers : (K, D) array or None
     old_dispersions : (K, D) array or None
+    weights : (D,) array or None
+        Per-variable weights for the weighted NEM. Centres and modes are
+        **unchanged** by ``w_j`` (a per-column constant factors out of the
+        weighted-likelihood normal equations, and out of the weighted median),
+        so they are estimated as usual. The weights only matter for dispersion
+        models that **pool across variables** (``s__`` and ``sk_``): there each
+        column's inertia and count are weighted by ``w_j``. ``None`` = all ones.
 
     Returns
     -------
@@ -169,7 +193,7 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
 
     # --- Dispersions ---
     dispersions = _inertia_to_dispersions(
-        Iner_KD, N_K, N_KD, N, D, K, dispersion_model, miss_mode
+        Iner_KD, N_K, N_KD, N, D, K, dispersion_model, miss_mode, weights
     )
 
     # Clamp dispersions from below
@@ -304,23 +328,36 @@ def _estimate_laplace_centers(X, C, observed, K, D, N_K):
     return centers
 
 
-def _inertia_to_dispersions(Iner_KD, N_K, N_KD, N, D, K, model, miss_mode):
-    """Convert inertia matrix to dispersions according to model."""
+def _inertia_to_dispersions(Iner_KD, N_K, N_KD, N, D, K, model, miss_mode,
+                            weights=None):
+    """Convert inertia matrix to dispersions according to model.
+
+    For the variable-pooling models (``s__``, ``sk_``) the sum over variables is
+    weighted by ``weights`` (per-variable ``w_j``): the pooled variance maximises
+    the weighted complete-data likelihood, giving ``sum_j w_j·Iner / sum_j w_j·N``
+    (the column weight ``w_j`` cancels in the per-variable models ``skd``/``s_d``,
+    which are therefore untouched). ``weights=None`` ⇒ all ones, recovering the
+    original pooled estimators exactly (``sum_j w_j = D``).
+    """
     dispersions = np.zeros((K, D))
+    # Per-variable weights; w.sum() replaces the plain "D" column count in the
+    # replace-mode denominators when pooling across variables.
+    w = np.ones(D) if weights is None else np.asarray(weights, dtype=float)
+    w_sum = w.sum()
 
     if model == Dispersion.S__:
         if miss_mode == "replace":
-            v = Iner_KD.sum() / (N * D)
+            v = (w * Iner_KD).sum() / (N * w_sum)
         else:
-            v = Iner_KD.sum() / N_KD.sum()
+            v = (w * Iner_KD).sum() / (w * N_KD).sum()
         dispersions[:] = v
 
     elif model == Dispersion.SK_:
         for k in range(K):
             if miss_mode == "replace":
-                vk = Iner_KD[k].sum() / (D * N_K[k])
+                vk = (w * Iner_KD[k]).sum() / (w_sum * N_K[k])
             else:
-                vk = Iner_KD[k].sum() / N_KD[k].sum()
+                vk = (w * Iner_KD[k]).sum() / (w * N_KD[k]).sum()
             dispersions[k, :] = vk
 
     elif model == Dispersion.S_D:
