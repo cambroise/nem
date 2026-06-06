@@ -170,15 +170,12 @@ computation, and Matplotlib for visualization.
 
 ```bash
 cd pynem
-pip install -e ".[dev]"
+pip install -e .
 ```
 
-For the optional **Numba** acceleration of the sequential E-step (large
-speed-ups on big graphs; a pure-Python fallback is used otherwise):
-
-```bash
-pip install -e ".[fast]"
-```
+Optional extras: `.[fast]` adds **Numba** (JIT acceleration of the sequential
+E-step on large graphs; a pure-Python fallback is used otherwise), `.[dev]`
+adds the test suite (pytest) — e.g. `pip install -e ".[fast]"`.
 
 ### Quick start
 
@@ -230,6 +227,48 @@ Run `python examples/example_pangenome.py` to reproduce the figure below
 ground truth):
 
 ![Pangenome partitioning](examples/pangenome_results.png)
+
+#### Real data: same results as PPanGGOLiN
+
+On PPanGGOLiN's official test dataset (53 *Chlamydia* genomes → **1086 gene
+families**), `pynem` reproduces PPanGGOLiN **exactly**. Running both on the same
+NEM input, the partitions are identical — same persistent / shell / cloud
+composition and the same label for *every* gene family (agreement **1.000**) —
+and pynem's soft membership matches the reference C core to **~5e-4** (the
+residual is float32 in the C core vs float64 in pynem):
+
+| | Persistent | Shell | Cloud |
+|---|---:|---:|---:|
+| PPanGGOLiN (production workflow) | 871 | 56 | 159 |
+| pynem `partition_pangenome` | 871 | 56 | 159 |
+
+![Chlamydia pangenome partition](examples/chlam_pangenome_presence.png)
+
+This is not an artefact of simulated data: pynem *is* PPanGGOLiN's partitioning
+step, down to the soft membership, on a real bacterial pangenome.
+
+#### Performance vs the C core
+
+`pynem` runs the same NEM as PPanGGOLiN's embedded C core and is competitive on
+speed. On simulated pangenomes (50 genomes), with the Numba-accelerated
+sequential E-step, it is consistently a bit faster than `run_partitioning` —
+the C core's wall-clock time includes the disk I/O the pipeline performs to
+write and re-read its NEM files, whereas pynem stays in memory. Best-of-3
+timings:
+
+| Gene families N | PPanGGOLiN (C core + I/O) | pynem (Python + Numba) | speed-up |
+|---:|---:|---:|---:|
+| 1 000 | 0.039 s | 0.020 s | 1.9× |
+| 2 000 | 0.069 s | 0.044 s | 1.6× |
+| 4 000 | 0.180 s | 0.077 s | 2.3× |
+| 8 000 | 0.250 s | 0.155 s | 1.6× |
+| 16 000 | 0.494 s | 0.310 s | 1.6× |
+
+![Speed: pynem vs PPanGGOLiN](examples/speed_ppanggolin_vs_pynem.png)
+
+Both scale linearly with N (it is the same algorithm). Without Numba, pynem
+falls back to pure Python and is slower — the JIT is what makes the sequential
+sweep competitive with native C.
 
 ### Evaluation with simulated data
 
