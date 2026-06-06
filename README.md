@@ -31,7 +31,7 @@ The model, algorithm, and original code served as a foundation for PanGGOLiN (Pa
 ```
 NEM/
 ├── csrc/           # Original C implementation (v1.07)
-├── pynem/          # Python reimplementation (standalone package, v0.3.1)
+├── pynem/          # Python reimplementation (standalone package, v0.4.0)
 │   ├── src/pynem/  # Package source
 │   └── tests/      # Test suite
 ├── ppanggolin/     # PPanGGOLiN submodule (embeds the same NEM core)
@@ -41,6 +41,7 @@ NEM/
 │   ├── example_sbm_200.py    # SBM graph example (200 nodes, 2D)
 │   ├── example_potts_30x30.py # Potts image example (30×30 grid, 2D)
 │   ├── example_pangenome.py  # Pangenome partitioning (persistent/shell/cloud)
+│   ├── example_weighted.py   # Weighted NEM (genome redundancy correction)
 │   └── essai.*               # Original dataset (100 nodes, 3 vars)
 └── README.md
 ```
@@ -270,6 +271,54 @@ Both scale linearly with N (it is the same algorithm). Without Numba, pynem
 falls back to pure Python and is slower — the JIT is what makes the sequential
 sweep competitive with native C.
 
+### Weighted NEM: down-weighting redundant genomes
+
+Genomes are rarely a balanced sample: an over-sampled clade (say 50 strains of
+one species) weighs as many times as it has representatives and **biases the
+partition toward its own biology**. pynem can correct this by giving each
+genome (each feature column) a weight `w_j`: a redundant genome gets a small
+weight, a rare one a large weight. Only the E-step changes — the closed-form
+M-step is preserved (see the maths note). Weighting is **opt-in**: with no
+weights you get the standard NEM, *byte-for-byte identical* (verified), so the
+PPanGGOLiN reproduction above is untouched.
+
+```python
+import pynem
+from pynem import NEM, partition_pangenome, genome_weights
+
+# 1. derive weights automatically: group the genomes (columns) by Jaccard
+#    distance + UPGMA, then turn group sizes into inverse-abundance weights.
+#    Number of groups: fixed (n_groups, default 10) or chosen by silhouette.
+w = pynem.genome_weights(presence, selection="silhouette")   # or n_groups=10
+
+# 2. pass them to the pangenome pipeline (or to NEM via feature_weights=w)
+res = partition_pangenome(presence, graph, K=3, beta=2.5, genome_weights=w)
+```
+
+**Hierarchical classification of the genomes.** `genome_weights` clusters the
+genomes with Jaccard distance and UPGMA (`scipy`), picking the number of groups
+by the silhouette criterion (no scikit-learn needed). Run
+`python examples/example_weighted.py` for a self-contained demo where 6 *signal*
+genomes carry the true gene partition and 60 *redundant* genomes carry an
+unrelated one: the silhouette finds exactly two genome groups, down-weights the
+redundant block (w ≈ 0.55 vs 5.5), and the weighted NEM **recovers the true
+partition** (ARI 0.96) where the unweighted one locks onto the redundant signal
+(ARI 0.00):
+
+![Weighted NEM on a redundancy scenario](examples/weighted_nem_results.png)
+
+On the real *Chlamydia* genomes, the same Jaccard + UPGMA step exposes the
+sub-structure of the 53 strains — large near-identical groups are down-weighted
+(w ≈ 0.4), isolated genomes up-weighted (w ≈ 6):
+
+![Hierarchical classification of Chlamydia genomes](examples/chlam_genome_dendrogram.png)
+
+> Caveat: deriving the weights from the presence/absence matrix is convenient
+> but **circular** (the weights come from the very matrix being partitioned). A
+> distance independent of gene content — e.g. ANI — is preferable when
+> available; the weighting mechanism is identical, only the source of `w_j`
+> changes.
+
 ### Evaluation with simulated data
 
 When true labels are available (e.g. from `SBMData` or `PottsImageData`),
@@ -291,6 +340,7 @@ ari = pynem.metrics.adjusted_rand_index(true_labels, model.labels_)
 | Initialization | `sort`, `random` (multiple starts), `param` (from given parameters) |
 | Site update | `parallel` (Jacobi), `seq` (sequential Gauss-Seidel, NEM default) |
 | Missing data | `replace` (EM-style) or `ignore` |
+| Feature weights | `feature_weights` per variable (weighted NEM); `None` = standard NEM |
 
 Robustness: empty classes are reinitialised k-means++ style (centre moved to the
 point farthest from the dominant class), and the sequential E-step is
