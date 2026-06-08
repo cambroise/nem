@@ -165,13 +165,16 @@ def partition_pangenome(presence, graph, K=3, beta=2.5, free_dispersion=False,
         e.g. to down-weight redundant genomes from an over-sampled clade so the
         partition reflects biology rather than sampling. ``None`` (default) =
         all weights 1, the standard PPanGGOLiN-faithful behaviour.
-    completeness : (n_org,) array-like or None
+    completeness : (n_org,) array-like, ``"auto"`` or None
         Per-genome completeness ``gamma_j in (0, 1]`` (e.g. from CheckM) for the
         **MAG-aware** Bernoulli model (mOTUpan-style). An absence in an
         incomplete genome is forgiven (presence prob ``mu * gamma_j``), which
         stops incomplete metagenome-assembled genomes from artificially
-        shrinking the persistent class. ``None`` (default) = full completeness,
-        the standard behaviour.
+        shrinking the persistent class. ``"auto"`` self-estimates completeness
+        from the data (no CheckM needed): length-seed init then iterative
+        re-estimation from the inferred persistent set (mOTUpan Eq. 6); the
+        estimated vector is returned in ``result["completeness"]``. ``None``
+        (default) = full completeness, the standard behaviour.
 
     Returns
     -------
@@ -189,6 +192,17 @@ def partition_pangenome(presence, graph, K=3, beta=2.5, free_dispersion=False,
     """
     presence = np.asarray(presence, dtype=float)
     N, n_org = presence.shape
+
+    # completeness="auto": estimate per-genome completeness from the data itself
+    # (no CheckM) by alternating partition <-> Eq.6 re-estimation.
+    if isinstance(completeness, str):
+        if completeness != "auto":
+            raise ValueError("completeness must be None, an array, or 'auto'; "
+                             f"got {completeness!r}")
+        return _partition_self_completeness(
+            presence, graph, K=K, beta=beta, free_dispersion=free_dispersion,
+            sm_degree=sm_degree, max_iter=max_iter, tol=tol,
+            genome_weights=genome_weights)
 
     H, total_edge_weight = build_nem_neighborhood(graph, sm_degree=sm_degree)
     if total_edge_weight <= 0:
@@ -231,5 +245,43 @@ def partition_pangenome(presence, graph, K=3, beta=2.5, free_dispersion=False,
         "beta": beta_scaled,
         "criteria": model.criteria_,
         "n_iter": model.n_iter_,
+        "completeness": completeness,
         "model": model,
     }
+
+
+def _partition_self_completeness(presence, graph, K=3, beta=2.5,
+                                 free_dispersion=False, sm_degree=10,
+                                 max_iter=100, tol=0.01, genome_weights=None,
+                                 comp_iters=15, comp_tol=1e-3, gmin=0.05):
+    """Self-estimate per-genome completeness (mOTUpan Eq. 6), no CheckM.
+
+    Initialise ``gamma_j`` from a genome-size proxy (a more complete genome has
+    more genes), then alternate: partition with ``completeness=gamma`` -> take
+    the persistent set ``P`` -> re-estimate ``gamma_j = |P present in j| / |P|``
+    -> repeat until ``gamma`` stabilises. Returns the final
+    :func:`partition_pangenome` result dict, with ``completeness`` set to the
+    estimated vector and ``completeness_n_iter`` to the number of outer rounds.
+    """
+    presence = np.asarray(presence, dtype=float)
+    sizes = presence.sum(axis=0)
+    gamma = np.clip(sizes / max(sizes.max(), 1.0), gmin, 1.0)   # length-seed init
+    res = None
+    n_round = 0
+    for n_round in range(1, comp_iters + 1):
+        res = partition_pangenome(
+            presence, graph, K=K, beta=beta, free_dispersion=free_dispersion,
+            sm_degree=sm_degree, max_iter=max_iter, tol=tol,
+            genome_weights=genome_weights, completeness=gamma)
+        persistent = res["partition"] == "P"
+        if persistent.sum() == 0:
+            break
+        new_gamma = np.clip(presence[persistent].sum(axis=0) / persistent.sum(),
+                            gmin, 1.0)                            # Eq. 6
+        delta = float(np.max(np.abs(new_gamma - gamma)))
+        gamma = new_gamma
+        if delta < comp_tol:
+            break
+    res["completeness"] = gamma
+    res["completeness_n_iter"] = n_round
+    return res

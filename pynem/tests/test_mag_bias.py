@@ -103,7 +103,37 @@ def test_mstep_mode_preserved_under_completeness():
     assert p_comp["centers"][0, 0] == 1.0
 
 
-# --- 5. validation ----------------------------------------------------------
+# --- 5. self-estimated completeness ("auto", no CheckM) ---------------------
+
+def test_completeness_auto_recovers_persistent():
+    X, G, _ = _pangenome(n=300, d=16, seed=3)
+    ref_P = partition_pangenome(X, G, K=3, beta=2.5, max_iter=60)["partition"] == "P"
+    rng = np.random.default_rng(4)
+    gamma = rng.uniform(0.4, 0.7, X.shape[1])
+    Xe = X.copy()
+    for j in range(X.shape[1]):
+        drop = (rng.random(X.shape[0]) < (1 - gamma[j])) & (Xe[:, j] == 1)
+        Xe[drop, j] = 0.0
+
+    naive = (partition_pangenome(Xe, G, K=3, beta=2.5, max_iter=60)["partition"] == "P").sum()
+    res = partition_pangenome(Xe, G, K=3, beta=2.5, max_iter=60, completeness="auto")
+    auto_P = res["partition"] == "P"
+    # self-estimation returns the estimated completeness and recovers persistent
+    assert res["completeness"].shape == (X.shape[1],)
+    assert res["completeness_n_iter"] >= 1
+    assert int(auto_P.sum()) > int(naive)
+    assert int((auto_P & ref_P).sum()) >= 0.8 * ref_P.sum()
+    # estimated completeness correlates with the (hidden) true completeness
+    assert np.corrcoef(res["completeness"], gamma)[0, 1] > 0.7
+
+
+def test_completeness_bad_string_raises():
+    X, G, _ = _pangenome()
+    with pytest.raises(ValueError):
+        partition_pangenome(X, G, K=3, completeness="nope")
+
+
+# --- 6. validation ----------------------------------------------------------
 
 def test_completeness_validation():
     X, G, _ = _pangenome()
