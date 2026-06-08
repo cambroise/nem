@@ -138,7 +138,7 @@ def _assign_partition(c_i, K):
 
 def partition_pangenome(presence, graph, K=3, beta=2.5, free_dispersion=False,
                         sm_degree=10, max_iter=100, tol=0.01,
-                        genome_weights=None):
+                        genome_weights=None, completeness=None):
     """Partition gene families into persistent / shell / cloud, à la PPanGGOLiN.
 
     Parameters
@@ -165,6 +165,13 @@ def partition_pangenome(presence, graph, K=3, beta=2.5, free_dispersion=False,
         e.g. to down-weight redundant genomes from an over-sampled clade so the
         partition reflects biology rather than sampling. ``None`` (default) =
         all weights 1, the standard PPanGGOLiN-faithful behaviour.
+    completeness : (n_org,) array-like or None
+        Per-genome completeness ``gamma_j in (0, 1]`` (e.g. from CheckM) for the
+        **MAG-aware** Bernoulli model (mOTUpan-style). An absence in an
+        incomplete genome is forgiven (presence prob ``mu * gamma_j``), which
+        stops incomplete metagenome-assembled genomes from artificially
+        shrinking the persistent class. ``None`` (default) = full completeness,
+        the standard behaviour.
 
     Returns
     -------
@@ -202,6 +209,7 @@ def partition_pangenome(presence, graph, K=3, beta=2.5, free_dispersion=False,
         init_params=init_params,
         site_update="seq",
         feature_weights=genome_weights,
+        completeness=completeness,
         convergence="classification",
         tol=tol,
         missing="ignore",

@@ -54,3 +54,6 @@ commands-tmp.md
 
 # Local exploratory notebooks (not for github)
 notebooks_local/
+
+# Local reference documents (papers, not for the repo)
+docs_local/

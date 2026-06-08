@@ -51,6 +51,12 @@ class NEM:
         partition reflects biology rather than sampling (see the weighted-NEM
         note). The M-step is unchanged by the weights except for the pooled
         dispersion models ``s__``/``sk_``.
+    completeness : array-like of shape (D,) or None
+        Per-genome completeness ``gamma_j in (0, 1]`` for the MAG-aware
+        Bernoulli emission (mOTUpan-style): presence prob ``mu_kj * gamma_j``,
+        so an absence in an incomplete genome is forgiven. Stops incomplete
+        metagenome-assembled genomes from shrinking the persistent class.
+        ``None`` (default) = full completeness, standard NEM. Bernoulli only.
     n_init : int
         Number of random initializations (only for init='random').
     max_iter : int
@@ -70,7 +76,8 @@ class NEM:
     def __init__(self, n_clusters=2, beta=1.0, algorithm="nem",
                  family="normal", dispersion="s__", proportion="pk",
                  beta_mode="fix", init="sort", init_params=None,
-                 site_update="parallel", feature_weights=None, n_init=1,
+                 site_update="parallel", feature_weights=None,
+                 completeness=None, n_init=1,
                  max_iter=100, tol=1e-3, convergence="classification",
                  missing="replace", random_state=None, verbose=0):
         self.n_clusters = n_clusters
@@ -84,9 +91,11 @@ class NEM:
         self.init_params = init_params
         self.site_update = site_update
         self.feature_weights = feature_weights
-        # Validated (D,) weight array, or None for the exact unweighted path.
-        # Set in fit(); defaulted here so direct _initialize() calls also work.
+        self.completeness = completeness
+        # Validated (D,) arrays, or None for the exact standard path. Set in
+        # fit(); defaulted here so direct _initialize() calls also work.
         self._weights = None
+        self._completeness = None
         self.n_init = n_init
         self.max_iter = max_iter
         self.tol = tol
@@ -162,6 +171,22 @@ class NEM:
                                  "non-negative")
             self._weights = w
 
+        # Per-genome completeness for the MAG-aware Bernoulli model. ``None``
+        # keeps the standard path; otherwise validate shape and range (0, 1].
+        if self.completeness is None:
+            self._completeness = None
+        else:
+            if self.family != Family.BERNOULLI:
+                raise ValueError("completeness is only supported for "
+                                 "family='bernoulli'")
+            gamma = np.asarray(self.completeness, dtype=float)
+            if gamma.shape != (d,):
+                raise ValueError(f"completeness must have shape ({d},) to match "
+                                 f"the {d} features/genomes; got {gamma.shape}")
+            if np.any(gamma <= 0) or np.any(gamma > 1) or not np.all(np.isfinite(gamma)):
+                raise ValueError("completeness must lie in (0, 1]")
+            self._completeness = gamma
+
         ns = NeighborhoodSystem(G)
 
         if self.beta_mode in ("heu_d", "heu_l"):
@@ -228,7 +253,7 @@ class NEM:
                 miss_mode=self.missing,
                 old_centers=params["centers"] if iteration > 0 else None,
                 old_dispersions=params["dispersions"] if iteration > 0 else None,
-                weights=self._weights,
+                weights=self._weights, completeness=self._completeness,
             ) if iteration > 0 else self._first_m_step(X, C)
 
             # Beta estimation (pseudo-gradient)
@@ -239,7 +264,7 @@ class NEM:
             # identical in the E-step and in the criteria below — compute it once.
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family, weights=self._weights,
+                params["proportions"], self.family, weights=self._weights, completeness=self._completeness,
             )
 
             # E-step
@@ -279,7 +304,7 @@ class NEM:
         """First M-step (no old parameters)."""
         return estimate_parameters(
             X, C, self.family, self.dispersion, self.proportion,
-            miss_mode=self.missing, weights=self._weights,
+            miss_mode=self.missing, weights=self._weights, completeness=self._completeness,
         )
 
     def _initialize(self, X, ns, K, rng):
@@ -304,7 +329,7 @@ class NEM:
             }
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family, weights=self._weights,
+                params["proportions"], self.family, weights=self._weights, completeness=self._completeness,
             )
             C_blind = self._normalize_membership(log_pkfki, np.zeros((N, K)))
             C = self._e_step(X, C_blind, params, ns, self.beta, K, rng)
@@ -351,7 +376,7 @@ class NEM:
             # One E-step to get initial classification
             log_pkfki = compute_log_density(
                 X, centers, dispersions, proportions, self.family,
-                weights=self._weights,
+                weights=self._weights, completeness=self._completeness,
             )
             # Without spatial term (beta=0 for init)
             C = self._normalize_membership(log_pkfki, np.zeros((N, K)))
@@ -395,7 +420,7 @@ class NEM:
         if log_pkfki is None:
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family, weights=self._weights,
+                params["proportions"], self.family, weights=self._weights, completeness=self._completeness,
             )
 
         if self.site_update == "seq":
@@ -496,7 +521,7 @@ class NEM:
         if log_pkfki is None:
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family, weights=self._weights,
+                params["proportions"], self.family, weights=self._weights, completeness=self._completeness,
             )
 
         # D (Hathaway) = sum_i sum_k c_ik * (log(pk*fki) - log(c_ik)), summed

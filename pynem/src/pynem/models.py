@@ -45,7 +45,7 @@ class Proportion(Enum):
 
 
 def compute_log_density(X, centers, dispersions, proportions, family,
-                        weights=None):
+                        weights=None, completeness=None):
     """Compute log(p_k * f_k(x_i)) for all i and k.
 
     Parameters
@@ -61,6 +61,13 @@ def compute_log_density(X, centers, dispersions, proportions, family,
         (a variable with ``w_j`` acts as if replicated ``w_j`` times). ``None``
         means all weights equal 1, i.e. the standard unweighted density —
         recovered byte-for-byte (the multiply is skipped entirely).
+    completeness : (D,) array or None
+        Per-variable (per-genome) completeness ``gamma_j in (0, 1]`` for the
+        **MAG-aware Bernoulli** emission (mOTUpan-style). A present feature is
+        only *detected* with probability ``gamma_j``, so the presence prob
+        becomes ``mu_kj * gamma_j`` and an absence in an incomplete genome is
+        forgiven. ``None`` (default) = full completeness, exact standard density.
+        Only affects the Bernoulli family.
 
     Returns
     -------
@@ -96,9 +103,20 @@ def compute_log_density(X, centers, dispersions, proportions, family,
             contrib = -(np.log(2 * safe_v) + absdiff / safe_v)
         else:  # BERNOULLI: -[ -log(1 - v) + |x - m| log((1 - v) / v) ]
             safe_v = np.where(zero_v, 0.5, v)
-            contrib = np.log(1 - safe_v) - absdiff * np.log((1 - safe_v) / safe_v)
+            if completeness is None:
+                contrib = np.log(1 - safe_v) - absdiff * np.log((1 - safe_v) / safe_v)
+            else:
+                # MAG-aware emission: presence prob mu_kj detected with
+                # completeness gamma_j -> P(x=1)=mu*gamma, P(x=0)=1-mu*gamma.
+                # mu = 1-eps if mode 1, eps if mode 0 (centers[k] is the 0/1 mode).
+                mu = np.where(centers[k] == 1, 1 - safe_v, safe_v)          # (D,)
+                mu_eff = np.clip(mu * completeness, PROB_FLOOR, 1 - PROB_FLOOR)
+                contrib = (Xf * np.log(mu_eff)[None, :]
+                           + (1 - Xf) * np.log(1 - mu_eff)[None, :])
 
-        contrib = np.where(zero_v[None, :], 0.0, contrib)   # zero-disp dims: no term
+        comp_bern = family == Family.BERNOULLI and completeness is not None
+        if not comp_bern:
+            contrib = np.where(zero_v[None, :], 0.0, contrib)  # zero-disp dims: no term
         contrib = np.where(observed, contrib, 0.0)          # unobserved dims: no term
         if weights is not None:
             contrib = contrib * weights[None, :]            # weighted NEM: w_j per variable
@@ -108,11 +126,15 @@ def compute_log_density(X, centers, dispersions, proportions, family,
         # off-mode observation -- UNLESS that variable is weighted out (w_j = 0),
         # in which case it must be ignored entirely (the note's w_j=0 = variable
         # selection limit). weights=None -> all variables active -> exact old
-        # behaviour, so the PPanGGOLiN reproduction is unaffected.
-        active = (np.ones(D, dtype=bool) if weights is None
-                  else weights > 0)
-        invalid = (observed & zero_v[None, :] & (absdiff > ZERO_DISP_TOL)
-                   & active[None, :]).any(axis=1)
+        # behaviour, so the PPanGGOLiN reproduction is unaffected. With the
+        # MAG-aware emission mu*gamma is always finite, so nothing is invalid.
+        if comp_bern:
+            invalid = np.zeros(N, dtype=bool)
+        else:
+            active = (np.ones(D, dtype=bool) if weights is None
+                      else weights > 0)
+            invalid = (observed & zero_v[None, :] & (absdiff > ZERO_DISP_TOL)
+                       & active[None, :]).any(axis=1)
         log_pkfki[:, k] = np.where(invalid, -np.inf, log_pk + log_fki)
 
     return log_pkfki
@@ -120,7 +142,7 @@ def compute_log_density(X, centers, dispersions, proportions, family,
 
 def estimate_parameters(X, C, family, dispersion_model, proportion_model,
                         miss_mode="replace", old_centers=None,
-                        old_dispersions=None, weights=None):
+                        old_dispersions=None, weights=None, completeness=None):
     """M-step: estimate model parameters from soft classification.
 
     Parameters
@@ -140,6 +162,13 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
         so they are estimated as usual. The weights only matter for dispersion
         models that **pool across variables** (``s__`` and ``sk_``): there each
         column's inertia and count are weighted by ``w_j``. ``None`` = all ones.
+    completeness : (D,) array or None
+        Per-genome completeness ``gamma_j`` for the MAG-aware Bernoulli model.
+        The presence rate is de-biased by ``gamma_j``: the mode is 1 iff the
+        observed presence fraction exceeds ``0.5 * gamma_j`` (so a gene seen in
+        only ``gamma_j`` of an incomplete genome's class still counts as
+        present), and the dispersion follows from ``mu = frac / gamma``. Only
+        used for the Bernoulli family. ``None`` = full completeness (standard).
 
     Returns
     -------
@@ -148,6 +177,7 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
     N, D = X.shape
     K = C.shape[1]
     observed = ~np.isnan(X)  # (N, D)
+    comp_bern = family == Family.BERNOULLI and completeness is not None
 
     # Class sizes
     raw_N_K = C.sum(axis=0)            # (K,) before clamping, for empty detection
@@ -165,7 +195,11 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
     # For 0/1 data the weighted median is the binary MODE, which equals
     # thresholding the C-weighted fraction of 1s at 0.5 — computed here as two
     # matmuls, with no per-(k,d) sort (see _estimate_bernoulli_centers).
-    if family == Family.BERNOULLI:
+    if comp_bern:
+        # MAG-aware: de-bias presence by completeness; sets mode AND dispersion.
+        centers, dispersions = _estimate_bernoulli_completeness(
+            X, C, observed, completeness)
+    elif family == Family.BERNOULLI:
         centers = _estimate_bernoulli_centers(X, C, observed)
     elif family == Family.LAPLACE:
         centers = _estimate_laplace_centers(X, C, observed, K, D, N_K)
@@ -173,28 +207,29 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
         centers = _estimate_mean_centers(X, C, observed, K, D, N, N_K, N_KD,
                                          miss_mode, old_centers)
 
-    # --- Inertia ---
-    Iner_KD = np.zeros((K, D))
-    X_filled = X.copy()
-    X_filled[~observed] = 0.0
+    if not comp_bern:
+        # --- Inertia ---
+        Iner_KD = np.zeros((K, D))
+        X_filled = X.copy()
+        X_filled[~observed] = 0.0
 
-    for k in range(K):
-        diff = X_filled - centers[k]
-        diff[~observed] = 0.0
-        if family == Family.NORMAL:
-            Iner_KD[k] = (C[:, k:k+1] * diff ** 2 * observed).sum(axis=0)
-        else:  # Laplace or Bernoulli
-            Iner_KD[k] = (C[:, k:k+1] * np.abs(diff) * observed).sum(axis=0)
+        for k in range(K):
+            diff = X_filled - centers[k]
+            diff[~observed] = 0.0
+            if family == Family.NORMAL:
+                Iner_KD[k] = (C[:, k:k+1] * diff ** 2 * observed).sum(axis=0)
+            else:  # Laplace or Bernoulli
+                Iner_KD[k] = (C[:, k:k+1] * np.abs(diff) * observed).sum(axis=0)
 
-        # Missing data correction for REPLACE mode (Normal only)
-        if miss_mode == "replace" and family == Family.NORMAL and old_dispersions is not None:
-            n_miss_kd = N_K[k] - N_KD[k]
-            Iner_KD[k] += np.maximum(n_miss_kd, 0) * old_dispersions[k]
+            # Missing data correction for REPLACE mode (Normal only)
+            if miss_mode == "replace" and family == Family.NORMAL and old_dispersions is not None:
+                n_miss_kd = N_K[k] - N_KD[k]
+                Iner_KD[k] += np.maximum(n_miss_kd, 0) * old_dispersions[k]
 
-    # --- Dispersions ---
-    dispersions = _inertia_to_dispersions(
-        Iner_KD, N_K, N_KD, N, D, K, dispersion_model, miss_mode, weights
-    )
+        # --- Dispersions ---
+        dispersions = _inertia_to_dispersions(
+            Iner_KD, N_K, N_KD, N, D, K, dispersion_model, miss_mode, weights
+        )
 
     # Clamp dispersions from below
     dispersions = np.maximum(dispersions, VAR_FLOOR)
@@ -302,6 +337,35 @@ def _estimate_bernoulli_centers(X, C, observed):
     with np.errstate(invalid="ignore", divide="ignore"):
         frac1 = np.where(W_total > 0, W_ones / np.maximum(W_total, DIV_GUARD), 0.0)
     return (frac1 > 0.5).astype(float)
+
+
+def _estimate_bernoulli_completeness(X, C, observed, completeness):
+    """MAG-aware Bernoulli mode + dispersion, de-biased by genome completeness.
+
+    The observed presence fraction ``frac`` of a class in genome ``j`` is
+    deflated by incompleteness; dividing by ``gamma_j`` recovers the true
+    presence rate ``mu = frac / gamma_j``. The mode is 1 iff ``mu > 0.5`` (i.e.
+    ``frac > 0.5 * gamma_j``), and the dispersion is the distance of ``mu`` to
+    its mode (``eps = 1-mu`` if mode 1, ``mu`` if mode 0). With ``gamma_j = 1``
+    this reduces to the standard binary mode and the ``skd`` dispersion.
+
+    Returns
+    -------
+    centers : (K, D) array of {0.0, 1.0}
+    dispersions : (K, D) array — epsilon in [VAR_FLOOR, 0.5]
+    """
+    Xf = np.where(observed, X, 0.0)
+    obs = observed.astype(float)
+    W_total = C.T @ obs
+    W_ones = C.T @ Xf
+    with np.errstate(invalid="ignore", divide="ignore"):
+        frac1 = np.where(W_total > 0, W_ones / np.maximum(W_total, DIV_GUARD), 0.0)
+    gamma = np.clip(np.asarray(completeness, dtype=float), VAR_FLOOR, 1.0)
+    mu = np.clip(frac1 / gamma[None, :], 0.0, 1.0)        # de-biased presence prob
+    centers = (mu > 0.5).astype(float)
+    eps = np.where(centers == 1, 1.0 - mu, mu)
+    dispersions = np.clip(eps, VAR_FLOOR, 0.5)
+    return centers, dispersions
 
 
 def _estimate_laplace_centers(X, C, observed, K, D, N_K):
