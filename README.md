@@ -31,7 +31,7 @@ The model, algorithm, and original code served as a foundation for PanGGOLiN (Pa
 ```
 NEM/
 ├── csrc/           # Original C implementation (v1.07)
-├── pynem/          # Python reimplementation (standalone package, v0.4.0)
+├── pynem/          # Python reimplementation (standalone package, v0.5.0)
 │   ├── src/pynem/  # Package source
 │   └── tests/      # Test suite
 ├── ppanggolin/     # PPanGGOLiN submodule (embeds the same NEM core)
@@ -319,6 +319,37 @@ sub-structure of the 53 strains — large near-identical groups are down-weighte
 > available; the weighting mechanism is identical, only the source of `w_j`
 > changes.
 
+### MAG-aware partitioning: completeness (v0.5.0)
+
+Metagenome-assembled genomes (MAGs) are often **incomplete**: a truly persistent
+gene is frequently *absent* simply because the assembly missed it, which
+artificially shrinks the persistent class. Following
+[mOTUpan](https://doi.org/10.1093/nargab/lqac060) (Buck et al. 2022), pynem can
+take a per-genome **completeness** `gamma_j in (0, 1]` (e.g. from CheckM) and
+*forgive* absences in incomplete genomes — the Bernoulli presence probability
+becomes `mu_kj * gamma_j`, so an absence costs little where the genome is known
+incomplete. This is **distinct from** and **combinable with** the redundancy
+weighting above (completeness fixes incompleteness, weighting fixes over-sampling).
+
+```python
+from pynem import partition_pangenome
+
+# completeness from CheckM (one value per genome)
+res = partition_pangenome(presence, graph, K=3, beta=2.5, completeness=gamma)
+
+# or self-estimate it from the data (no CheckM) — length-seed init + iterative
+# re-estimation from the inferred persistent set (mOTUpan Eq. 6)
+res = partition_pangenome(presence, graph, K=3, beta=2.5, completeness="auto")
+res["completeness"]          # the completeness vector used / estimated
+```
+
+On the real *Chlamydia* pangenome eroded to 40–70 % completeness, the standard
+pipeline **collapses** the persistent class (871 → 3 families); with
+`completeness` (given *or* self-estimated) it is **restored** (all 871 recovered;
+the self-estimated `gamma` correlates 0.98 with the true completeness).
+`completeness=None` (default) keeps the standard, PPanGGOLiN-faithful behaviour
+unchanged.
+
 ### Evaluation with simulated data
 
 When true labels are available (e.g. from `SBMData` or `PottsImageData`),
@@ -341,6 +372,7 @@ ari = pynem.metrics.adjusted_rand_index(true_labels, model.labels_)
 | Site update | `parallel` (Jacobi), `seq` (sequential Gauss-Seidel, NEM default) |
 | Missing data | `replace` (EM-style) or `ignore` |
 | Feature weights | `feature_weights` per variable (weighted NEM); `None` = standard NEM |
+| Completeness (MAG) | `completeness` per genome (Bernoulli; CheckM array or `"auto"`); `None` = standard |
 
 Robustness: empty classes are reinitialised k-means++ style (centre moved to the
 point farthest from the dominant class), and the sequential E-step is
