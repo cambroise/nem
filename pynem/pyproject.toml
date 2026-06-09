@@ -1,13 +1,41 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pynem"
-version = "0.5.0"
-description = "Neighborhood EM for spatial clustering on graphs"
+dynamic = ["version"]
+description = "Neighborhood EM (NEM): spatial clustering on graphs with a hidden Markov random field"
+readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Christophe Ambroise", email = "christophe.ambroise@gmail.com" },
+]
+keywords = [
+    "clustering",
+    "expectation-maximization",
+    "hidden Markov random field",
+    "spatial clustering",
+    "Bernoulli mixture",
+    "pangenome",
+    "PPanGGOLiN",
+    "neighborhood EM",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "numpy>=1.22",
     "scipy>=1.8",
@@ -18,6 +46,14 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 fast = ["numba>=0.57"]  # JIT for the sequential E-step; pure-Python fallback otherwise
+
+[project.urls]
+Homepage = "https://github.com/cambroise/nem"
+Repository = "https://github.com/cambroise/nem"
+Issues = "https://github.com/cambroise/nem/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "pynem.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

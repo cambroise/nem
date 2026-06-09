@@ -1,7 +1,11 @@
-"""Visualization utilities for NEM results."""
+"""Visualization utilities for NEM results.
+
+``matplotlib`` is imported lazily inside each plotting function so that
+``import pynem`` does not pull in matplotlib (keeps imports light on headless
+servers and speeds up startup).
+"""
 
 import numpy as np
-import matplotlib.pyplot as plt
 import networkx as nx
 
 
@@ -42,6 +46,7 @@ def plot_graph_clusters(G, labels, pos=None, ax=None, **kwargs):
     -------
     ax : matplotlib Axes
     """
+    import matplotlib.pyplot as plt
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(8, 6))
     if pos is None:
@@ -81,6 +86,7 @@ def plot_membership(G, membership, class_idx=0, pos=None, ax=None):
     -------
     ax : matplotlib Axes
     """
+    import matplotlib.pyplot as plt
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(8, 6))
     if pos is None:
@@ -115,6 +121,7 @@ def plot_convergence(history, criterion="U", ax=None):
     -------
     ax : matplotlib Axes
     """
+    import matplotlib.pyplot as plt
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(6, 4))
 
@@ -141,6 +148,7 @@ def plot_cluster_centers(centers, labels=None, ax=None):
     -------
     ax : matplotlib Axes
     """
+    import matplotlib.pyplot as plt
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(8, 4))
 
@@ -187,6 +195,7 @@ def plot_labels(G, labels, pos=None, ax=None, title="Labels", **kwargs):
     -------
     ax : matplotlib Axes
     """
+    import matplotlib.pyplot as plt
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(6, 5))
 
@@ -237,6 +246,7 @@ def plot_feature(G, feature_values, pos=None, ax=None, title="Feature",
     -------
     ax : matplotlib Axes
     """
+    import matplotlib.pyplot as plt
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(6, 5))
 
@@ -291,6 +301,7 @@ def plot_results(G, model, true_labels=None, pos=None, var_names=None):
     -------
     fig : matplotlib Figure
     """
+    import matplotlib.pyplot as plt
     X = _get_features_matrix(G)
     N, D = X.shape
 
