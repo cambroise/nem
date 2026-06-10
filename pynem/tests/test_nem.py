@@ -2,9 +2,11 @@
 
 import sys
 from pathlib import Path
+
+import matplotlib
 import numpy as np
 import pytest
-import matplotlib
+
 matplotlib.use("Agg")  # non-interactive backend for tests
 import matplotlib.pyplot as plt
 
@@ -13,7 +15,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import pynem
 from pynem import NEM
-from pynem.models import Family, Dispersion, Proportion
 from pynem.metrics import adjusted_rand_index
 
 EXAMPLES_DIR = Path(__file__).parent.parent.parent / "examples"

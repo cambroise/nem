@@ -23,7 +23,7 @@ silhouette is computed on the same Jaccard distances used for the linkage).
 """
 
 import numpy as np
-from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import pdist, squareform
 
 __all__ = [

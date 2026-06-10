@@ -3,15 +3,15 @@
 import sys
 from pathlib import Path
 
-import numpy as np
 import networkx as nx
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import pynem.core as core
-from pynem.core import NEM
 from pynem._fast import HAS_NUMBA
+from pynem.core import NEM
 
 
 def _toy():

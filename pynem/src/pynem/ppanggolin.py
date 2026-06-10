@@ -33,8 +33,8 @@ lists of its lower-degree neighbours. This is modelled with a directed graph.
 
 import math
 
-import numpy as np
 import networkx as nx
+import numpy as np
 
 from .core import NEM
 

@@ -22,16 +22,16 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
 import networkx as nx
+import numpy as np
 
 # Make pynem importable when run from the repo without installation.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pynem.core as core
-from pynem.core import NEM
-from pynem.ppanggolin import build_param_init, build_nem_neighborhood
 from pynem._fast import HAS_NUMBA
+from pynem.core import NEM
+from pynem.ppanggolin import build_nem_neighborhood, build_param_init
 
 
 def simulate(n_pers, n_shell, n_cloud, d, density, seed=1):
@@ -106,7 +106,9 @@ def main():
           f"numba={'yes' if HAS_NUMBA else 'NO (pure Python)'}")
 
     if args.profile:
-        import cProfile, pstats, io
+        import cProfile
+        import io
+        import pstats
         pr = cProfile.Profile()
         pr.enable()
         m, _ = time_fit(X, H, beta, args.iters, use_numba=True)

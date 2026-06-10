@@ -5,8 +5,8 @@
 servers and speeds up startup).
 """
 
-import numpy as np
 import networkx as nx
+import numpy as np
 
 
 def _is_image(G):

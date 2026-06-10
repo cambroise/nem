@@ -3,16 +3,15 @@
 import sys
 from pathlib import Path
 
-import numpy as np
 import networkx as nx
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pynem import NEM
 from pynem.metrics import adjusted_rand_index as ari
-from pynem.models import compute_log_density, estimate_parameters, Family, \
-    Dispersion, Proportion
+from pynem.models import Dispersion, Family, Proportion, compute_log_density, estimate_parameters
 
 
 def _ring_graph(n):
@@ -72,7 +71,6 @@ def test_ones_equals_unweighted(family, disp, data):
 
 def test_weights_change_pooled_dispersion():
     X, G = _gaussian_blobs(d=4)
-    d = X.shape[1]
     w = np.array([5.0, 1.0, 1.0, 1.0])  # over-weight the first variable
     common = dict(n_clusters=2, beta=0.5, family="normal", dispersion="sk_",
                   proportion="pk", site_update="seq", max_iter=30,

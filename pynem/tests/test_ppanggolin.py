@@ -14,16 +14,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-import numpy as np
 import networkx as nx
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pynem.core import NEM
 from pynem.ppanggolin import (
-    build_param_init,
     build_nem_neighborhood,
+    build_param_init,
     partition_pangenome,
 )
 
@@ -121,7 +121,9 @@ def _run_reference(pg, itermax, sm_degree=SM_DEGREE):
     uf = np.loadtxt(tmp / f"nem_file_{K}.uf")
     lines = (tmp / f"nem_file_{K}.mf").read_text().splitlines()
     g = pg["g_org"]
-    mu = np.zeros((K, g)); eps = np.zeros((K, g)); prop = np.zeros(K)
+    mu = np.zeros((K, g))
+    eps = np.zeros((K, g))
+    prop = np.zeros(K)
     for k, line in enumerate(lines[-K:]):
         v = line.split()
         mu[k] = [float(x) for x in v[:g]]
