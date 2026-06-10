@@ -234,9 +234,115 @@ class NEM:
                              f"0..{n - 1}; relabel with "
                              "networkx.convert_node_labels_to_integers")
 
-    def predict(self, G_or_X=None):
-        """Return hard labels."""
+    # Constructor parameters, for the scikit-learn-style get_params/set_params.
+    _PARAM_NAMES = (
+        "n_clusters", "beta", "algorithm", "family", "dispersion", "proportion",
+        "beta_mode", "init", "init_params", "site_update", "feature_weights",
+        "completeness", "n_init", "max_iter", "tol", "convergence", "missing",
+        "random_state", "verbose",
+    )
+
+    def get_params(self, deep=True):
+        """Get parameters for this estimator (scikit-learn compatible).
+
+        Returns the constructor arguments as a dict, so ``NEM(**est.get_params())``
+        reconstructs an equivalent estimator (enum-valued params are returned as
+        their string form, e.g. ``"normal"``).
+        """
+        params = {}
+        for name in self._PARAM_NAMES:
+            value = getattr(self, name)
+            if isinstance(value, (Family, Dispersion, Proportion)):
+                value = value.value
+            params[name] = value
+        return params
+
+    def set_params(self, **params):
+        """Set the parameters of this estimator (scikit-learn compatible).
+
+        Enables use in tools that call ``set_params`` (grid search, clone). The
+        enum-valued parameters accept their string form.
+        """
+        enum_map = {"family": Family, "dispersion": Dispersion,
+                    "proportion": Proportion}
+        for name, value in params.items():
+            if name not in self._PARAM_NAMES:
+                raise ValueError(
+                    f"invalid parameter {name!r} for estimator NEM; valid "
+                    f"parameters are {sorted(self._PARAM_NAMES)}")
+            if name in enum_map:
+                value = enum_map[name](value)
+            setattr(self, name, value)
+        return self
+
+    def _check_fitted(self):
+        if not hasattr(self, "labels_"):
+            raise RuntimeError("This NEM instance is not fitted yet; call "
+                               "fit() before using this method.")
+
+    def _posterior(self, X):
+        """Soft membership of new feature vectors under the fitted model.
+
+        Uses the fitted parameters and the data likelihood only (no spatial
+        term — new points are not part of the training graph). Shape (N, K).
+        """
+        self._check_fitted()
+        X = np.asarray(X, dtype=float)
+        if X.ndim != 2 or X.shape[1] != self.centers_.shape[1]:
+            raise ValueError(
+                f"X must be 2-D with {self.centers_.shape[1]} features; "
+                f"got shape {X.shape}")
+        log_pkfki = compute_log_density(
+            X, self.centers_, self.dispersions_, self.proportions_,
+            self.family, weights=self._weights, completeness=self._completeness,
+        )
+        return self._normalize_membership(log_pkfki, np.zeros_like(log_pkfki))
+
+    def predict(self, X=None):
+        """Hard labels (1-based).
+
+        ``predict()`` returns the fitted-data labels. ``predict(X)`` classifies
+        new feature vectors ``X`` (N, D) by the fitted mixture (spatial term
+        excluded, since new points are not in the training graph).
+        """
+        if X is None:
+            self._check_fitted()
+            return self.labels_
+        return np.argmax(self._posterior(X), axis=1) + 1
+
+    def transform(self, X=None):
+        """Soft membership (N, K).
+
+        ``transform()`` returns the fitted-data membership; ``transform(X)`` the
+        membership of new feature vectors ``X``.
+        """
+        if X is None:
+            self._check_fitted()
+            return self.membership_
+        return self._posterior(X)
+
+    def fit_predict(self, G_or_X, graph=None):
+        """Fit the model and return the hard labels of the training data."""
+        self.fit(G_or_X, graph=graph)
         return self.labels_
+
+    def score(self, X=None, y=None):
+        """Mixture log-likelihood under the fitted model (higher is better).
+
+        ``score()`` returns the fitted-data log-likelihood (``criteria_['L']``);
+        ``score(X)`` evaluates it on new feature vectors ``X``. ``y`` is ignored
+        (present for scikit-learn API compatibility).
+        """
+        self._check_fitted()
+        if X is None:
+            return float(self.criteria_["L"])
+        from scipy.special import logsumexp
+        log_pkfki = compute_log_density(
+            np.asarray(X, dtype=float), self.centers_, self.dispersions_,
+            self.proportions_, self.family, weights=self._weights,
+            completeness=self._completeness,
+        )
+        return float(logsumexp(log_pkfki, axis=1).sum())
 
     def _run_once(self, X, ns, K, rng):
         """Single NEM run from one initialization."""
