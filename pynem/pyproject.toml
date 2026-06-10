@@ -49,6 +49,7 @@ dev = ["pytest>=7.0", "ruff>=0.6", "matplotlib>=3.5"]  # tests exercise pynem.vi
 
 [project.urls]
 Homepage = "https://github.com/cambroise/nem"
+Documentation = "https://pynem.readthedocs.io"
 Repository = "https://github.com/cambroise/nem"
 Issues = "https://github.com/cambroise/nem/issues"
 
