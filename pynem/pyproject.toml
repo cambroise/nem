@@ -11,7 +11,7 @@ requires-python = ">=3.9"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
-    { name = "Christophe Ambroise", email = "christophe.ambroise@gmail.com" },
+    { name = "Christophe Ambroise", email = "christophe.ambroise@univ-evry.fr" },
 ]
 keywords = [
     "clustering",
