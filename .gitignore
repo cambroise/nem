@@ -57,3 +57,6 @@ notebooks_local/
 
 # Local reference documents (papers, not for the repo)
 docs_local/
+
+# MkDocs build output
+pynem/site/
