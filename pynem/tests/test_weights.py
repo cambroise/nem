@@ -9,8 +9,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pynem.weights import (
-    jaccard_upgma_linkage, silhouette_score, jaccard_upgma_labels,
-    abundance_weights, genome_weights,
+    abundance_weights,
+    genome_weights,
+    jaccard_upgma_labels,
+    jaccard_upgma_linkage,
+    silhouette_score,
 )
 
 
@@ -150,6 +153,7 @@ def test_genome_weights_silhouette_runs():
 def test_genome_weights_feeds_partition_pangenome():
     # end-to-end seam: derived weights plug into partition_pangenome
     import networkx as nx
+
     from pynem import partition_pangenome
     X, _ = _clustered_presence()
     n_genomes = X.shape[1]

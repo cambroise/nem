@@ -44,7 +44,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "ruff>=0.6"]
 fast = ["numba>=0.57"]  # JIT for the sequential E-step; pure-Python fallback otherwise
 
 [project.urls]
@@ -57,3 +57,11 @@ version = { attr = "pynem.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I import sorting. Keep it focused; widen later.
+select = ["E", "F", "W", "I"]

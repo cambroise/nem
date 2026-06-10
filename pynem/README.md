@@ -1,5 +1,9 @@
 # pynem — Neighborhood EM for spatial clustering on graphs
 
+[![Tests](https://github.com/cambroise/nem/actions/workflows/tests.yml/badge.svg)](https://github.com/cambroise/nem/actions/workflows/tests.yml)
+[![Python](https://img.shields.io/badge/python-3.9%E2%80%933.13-blue)](https://www.python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/cambroise/nem/blob/main/pynem/LICENSE)
+
 `pynem` is a standalone, pure-Python implementation of the **Neighborhood EM
 (NEM)** algorithm: clustering that combines the EM algorithm with a **hidden
 Markov random field**. Given a graph whose nodes carry feature vectors, NEM

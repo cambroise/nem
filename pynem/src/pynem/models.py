@@ -1,7 +1,8 @@
 """Distribution families and parameter estimation for NEM."""
 
-import numpy as np
 from enum import Enum
+
+import numpy as np
 
 # Three semantically distinct floors that used to share a single ``EPSILON``.
 # They are all kept at 1e-20 so the numerics are byte-for-byte unchanged (the

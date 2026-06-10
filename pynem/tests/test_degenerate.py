@@ -14,15 +14,18 @@ in ``_store_result``):
 import sys
 from pathlib import Path
 
-import numpy as np
 import networkx as nx
-import pytest
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pynem.core import NEM
 from pynem.models import (
-    estimate_parameters, Family, Dispersion, Proportion, EMPTY_CLASS_WEIGHT,
+    EMPTY_CLASS_WEIGHT,
+    Dispersion,
+    Family,
+    Proportion,
+    estimate_parameters,
 )
 
 

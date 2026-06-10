@@ -1,15 +1,20 @@
 """Core NEM algorithm (E-step, M-step, convergence)."""
 
-import numpy as np
 import networkx as nx
+import numpy as np
 
+from ._fast import HAS_NUMBA, seq_sweep
 from .models import (
-    Family, Dispersion, Proportion,
-    PROB_FLOOR, VAR_FLOOR, DIV_GUARD,
-    compute_log_density, estimate_parameters,
+    DIV_GUARD,
+    PROB_FLOOR,
+    VAR_FLOOR,
+    Dispersion,
+    Family,
+    Proportion,
+    compute_log_density,
+    estimate_parameters,
 )
 from .spatial import NeighborhoodSystem
-from ._fast import seq_sweep, HAS_NUMBA
 
 
 class NEM:
@@ -246,15 +251,19 @@ class NEM:
         old_C = None
         old_crit = None
 
+        params = None
         for iteration in range(self.max_iter):
-            # M-step
-            params = estimate_parameters(
-                X, C, self.family, self.dispersion, self.proportion,
-                miss_mode=self.missing,
-                old_centers=params["centers"] if iteration > 0 else None,
-                old_dispersions=params["dispersions"] if iteration > 0 else None,
-                weights=self._weights, completeness=self._completeness,
-            ) if iteration > 0 else self._first_m_step(X, C)
+            # M-step (the first one has no previous parameters to reuse)
+            if iteration == 0:
+                params = self._first_m_step(X, C)
+            else:
+                params = estimate_parameters(
+                    X, C, self.family, self.dispersion, self.proportion,
+                    miss_mode=self.missing,
+                    old_centers=params["centers"],
+                    old_dispersions=params["dispersions"],
+                    weights=self._weights, completeness=self._completeness,
+                )
 
             # Beta estimation (pseudo-gradient)
             if self.beta_mode == "psgrad":
@@ -264,7 +273,8 @@ class NEM:
             # identical in the E-step and in the criteria below — compute it once.
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family, weights=self._weights, completeness=self._completeness,
+                params["proportions"], self.family,
+                weights=self._weights, completeness=self._completeness,
             )
 
             # E-step
@@ -329,7 +339,8 @@ class NEM:
             }
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family, weights=self._weights, completeness=self._completeness,
+                params["proportions"], self.family,
+                weights=self._weights, completeness=self._completeness,
             )
             C_blind = self._normalize_membership(log_pkfki, np.zeros((N, K)))
             C = self._e_step(X, C_blind, params, ns, self.beta, K, rng)
@@ -420,7 +431,8 @@ class NEM:
         if log_pkfki is None:
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family, weights=self._weights, completeness=self._completeness,
+                params["proportions"], self.family,
+                weights=self._weights, completeness=self._completeness,
             )
 
         if self.site_update == "seq":
@@ -521,7 +533,8 @@ class NEM:
         if log_pkfki is None:
             log_pkfki = compute_log_density(
                 X, params["centers"], params["dispersions"],
-                params["proportions"], self.family, weights=self._weights, completeness=self._completeness,
+                params["proportions"], self.family,
+                weights=self._weights, completeness=self._completeness,
             )
 
         # D (Hathaway) = sum_i sum_k c_ik * (log(pk*fki) - log(c_ik)), summed

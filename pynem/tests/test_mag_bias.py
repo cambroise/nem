@@ -3,15 +3,14 @@
 import sys
 from pathlib import Path
 
-import numpy as np
 import networkx as nx
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pynem import NEM, partition_pangenome
-from pynem.models import compute_log_density, estimate_parameters, Family, \
-    Dispersion, Proportion
+from pynem.models import Dispersion, Family, Proportion, compute_log_density, estimate_parameters
 
 
 def _ring(n):

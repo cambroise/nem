@@ -1,8 +1,9 @@
 """Read/write NEM file formats and convert to/from networkx graphs."""
 
-import numpy as np
-import networkx as nx
 from pathlib import Path
+
+import networkx as nx
+import numpy as np
 
 
 def read_str(path):
