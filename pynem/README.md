@@ -1,6 +1,8 @@
 # pynem — Neighborhood EM for spatial clustering on graphs
 
+[![PyPI](https://img.shields.io/pypi/v/pynem)](https://pypi.org/project/pynem/)
 [![Tests](https://github.com/cambroise/nem/actions/workflows/tests.yml/badge.svg)](https://github.com/cambroise/nem/actions/workflows/tests.yml)
+[![Docs](https://readthedocs.org/projects/pynem/badge/?version=latest)](https://pynem.readthedocs.io/en/latest/)
 [![Python](https://img.shields.io/badge/python-3.9%E2%80%933.13-blue)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/cambroise/nem/blob/main/pynem/LICENSE)
 
@@ -100,8 +102,9 @@ PPanGGOLiN byte-for-byte.
 
 ## Documentation & source
 
-Full documentation, examples and the C reference implementation:
-**https://github.com/cambroise/nem**
+- **Documentation:** https://pynem.readthedocs.io
+- **Source, examples and the C reference implementation:**
+  https://github.com/cambroise/nem
 
 ## References
 
