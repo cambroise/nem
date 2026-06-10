@@ -6,13 +6,28 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-06-10
+
+First release published to PyPI. Packaging, tooling and a complete
+scikit-learn-style API; no change to the clustering behaviour.
+
 ### Added
+- Complete **scikit-learn-style API** on `NEM` (implemented manually, no
+  scikit-learn dependency): `get_params` / `set_params`, `predict(X)` /
+  `transform(X)` to classify new feature vectors via the fitted mixture (data
+  likelihood only — the MRF spatial term is excluded for points outside the
+  training graph), `fit_predict`, and `score` (mixture log-likelihood).
 - Optional `viz` extra: matplotlib is no longer a hard dependency. Install
   `pynem[viz]` for plotting; `import pynem` works without matplotlib (lighter on
   headless servers). Plotting functions raise a clear error if it is missing.
+- Documentation site (MkDocs-Material + mkdocstrings autodoc), Read the Docs
+  ready (`.readthedocs.yaml`).
 - `CHANGELOG.md` and `CITATION.cff`.
 
 ### Changed
+- **Packaging**: PyPI-ready metadata (PEP 639 license, classifiers, project
+  URLs), single-sourced version, `LICENSE` file, and a Trusted-Publishing
+  workflow.
 - Continuous integration (GitHub Actions): lint (ruff) + a test matrix on Python
   3.9–3.13; ruff configuration in `pyproject.toml`.
 
@@ -70,7 +85,8 @@ to [Semantic Versioning](https://semver.org/).
   Bernoulli families, `nem`/`ncem`/`gem`, dispersion and proportion models),
   with a scikit-learn-style API, I/O for `.str`/`.dat`/`.nei`, and visualization.
 
-[Unreleased]: https://github.com/cambroise/nem/compare/pynem-v0.5.0...HEAD
+[Unreleased]: https://github.com/cambroise/nem/compare/pynem-v0.6.0...HEAD
+[0.6.0]: https://github.com/cambroise/nem/compare/pynem-v0.5.0...pynem-v0.6.0
 [0.5.0]: https://github.com/cambroise/nem/releases/tag/pynem-v0.5.0
 [0.4.0]: https://github.com/cambroise/nem/releases/tag/pynem-v0.4.0
 [0.3.1]: https://github.com/cambroise/nem/releases/tag/pynem-v0.3.1
