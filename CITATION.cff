@@ -1,0 +1,50 @@
+cff-version: 1.2.0
+message: "If you use pynem, please cite it using this metadata."
+title: "pynem: Neighborhood EM for spatial clustering on graphs"
+abstract: >-
+  pynem is a standalone Python implementation of the Neighborhood EM (NEM)
+  algorithm — clustering that combines the EM algorithm with a hidden Markov
+  random field. It faithfully reproduces the PPanGGOLiN pangenome-partitioning
+  pipeline and adds per-variable weighting (genome redundancy) and a MAG-aware
+  completeness model (genome incompleteness).
+type: software
+authors:
+  - given-names: Christophe
+    family-names: Ambroise
+    email: christophe.ambroise@univ-evry.fr
+    affiliation: "Université d'Évry, Université Paris-Saclay, CNRS, LaMME"
+version: "0.5.0"
+date-released: "2026-06-10"
+license: MIT
+repository-code: "https://github.com/cambroise/nem"
+url: "https://github.com/cambroise/nem"
+keywords:
+  - clustering
+  - expectation-maximization
+  - hidden Markov random field
+  - Bernoulli mixture
+  - pangenome
+  - PPanGGOLiN
+references:
+  - type: conference-paper
+    title: "Clustering of spatial data by the EM algorithm"
+    authors:
+      - given-names: Christophe
+        family-names: Ambroise
+      - given-names: Van Mo
+        family-names: Dang
+      - given-names: Gérard
+        family-names: Govaert
+    collection-title: "geoENV I — Geostatistics for Environmental Applications"
+    year: 1997
+    start: 493
+    end: 504
+  - type: article
+    title: "Convergence proof of an EM-type algorithm for spatial clustering"
+    authors:
+      - given-names: Christophe
+        family-names: Ambroise
+      - given-names: Gérard
+        family-names: Govaert
+    journal: "Pattern Recognition Letters"
+    year: 1998
