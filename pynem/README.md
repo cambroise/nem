@@ -5,6 +5,7 @@
 [![Docs](https://readthedocs.org/projects/pynem/badge/?version=latest)](https://pynem.readthedocs.io/en/latest/)
 [![Python](https://img.shields.io/badge/python-3.9%E2%80%933.13-blue)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/cambroise/nem/blob/main/pynem/LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20627688.svg)](https://doi.org/10.5281/zenodo.20627688)
 
 `pynem` is a standalone, pure-Python implementation of the **Neighborhood EM
 (NEM)** algorithm: clustering that combines the EM algorithm with a **hidden
@@ -105,6 +106,17 @@ PPanGGOLiN byte-for-byte.
 - **Documentation:** https://pynem.readthedocs.io
 - **Source, examples and the C reference implementation:**
   https://github.com/cambroise/nem
+
+## Citation
+
+If you use pynem, please cite it (metadata in
+[`CITATION.cff`](https://github.com/cambroise/nem/blob/main/CITATION.cff)):
+
+> Ambroise, C. *pynem: Neighborhood EM for spatial clustering on graphs.* Zenodo.
+> https://doi.org/10.5281/zenodo.20627688
+
+The concept DOI above always resolves to the latest version; each release also
+gets its own version DOI.
 
 ## References
 
