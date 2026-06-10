@@ -1,12 +1,24 @@
 """Visualization utilities for NEM results.
 
-``matplotlib`` is imported lazily inside each plotting function so that
-``import pynem`` does not pull in matplotlib (keeps imports light on headless
-servers and speeds up startup).
+``matplotlib`` is an **optional** dependency (``pip install pynem[viz]``),
+imported lazily inside each plotting function via :func:`_require_mpl` so that
+``import pynem`` works without it (light imports on headless servers).
 """
 
 import networkx as nx
 import numpy as np
+
+
+def _require_mpl():
+    """Return ``matplotlib.pyplot``, with a helpful error if it is missing."""
+    try:
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError as exc:  # pragma: no cover - trivial
+        raise ModuleNotFoundError(
+            "matplotlib is required for pynem plotting; install it with "
+            "`pip install pynem[viz]`."
+        ) from exc
+    return plt
 
 
 def _is_image(G):
@@ -46,7 +58,7 @@ def plot_graph_clusters(G, labels, pos=None, ax=None, **kwargs):
     -------
     ax : matplotlib Axes
     """
-    import matplotlib.pyplot as plt
+    plt = _require_mpl()
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(8, 6))
     if pos is None:
@@ -86,7 +98,7 @@ def plot_membership(G, membership, class_idx=0, pos=None, ax=None):
     -------
     ax : matplotlib Axes
     """
-    import matplotlib.pyplot as plt
+    plt = _require_mpl()
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(8, 6))
     if pos is None:
@@ -121,7 +133,7 @@ def plot_convergence(history, criterion="U", ax=None):
     -------
     ax : matplotlib Axes
     """
-    import matplotlib.pyplot as plt
+    plt = _require_mpl()
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(6, 4))
 
@@ -148,7 +160,7 @@ def plot_cluster_centers(centers, labels=None, ax=None):
     -------
     ax : matplotlib Axes
     """
-    import matplotlib.pyplot as plt
+    plt = _require_mpl()
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(8, 4))
 
@@ -195,7 +207,7 @@ def plot_labels(G, labels, pos=None, ax=None, title="Labels", **kwargs):
     -------
     ax : matplotlib Axes
     """
-    import matplotlib.pyplot as plt
+    plt = _require_mpl()
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(6, 5))
 
@@ -246,7 +258,7 @@ def plot_feature(G, feature_values, pos=None, ax=None, title="Feature",
     -------
     ax : matplotlib Axes
     """
-    import matplotlib.pyplot as plt
+    plt = _require_mpl()
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(6, 5))
 
@@ -301,7 +313,7 @@ def plot_results(G, model, true_labels=None, pos=None, var_names=None):
     -------
     fig : matplotlib Figure
     """
-    import matplotlib.pyplot as plt
+    plt = _require_mpl()
     X = _get_features_matrix(G)
     N, D = X.shape
 

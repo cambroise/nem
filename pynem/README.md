@@ -24,9 +24,14 @@ incompleteness).
 pip install pynem
 ```
 
-Optional extras: `pynem[fast]` adds **Numba** (JIT acceleration of the sequential
-E-step; a pure-Python fallback is used otherwise); `pynem[dev]` adds the test
-suite.
+Optional extras:
+- `pynem[viz]` — **matplotlib** for the plotting utilities (`pynem.viz`).
+  Without it, `import pynem` and all clustering still work; only plotting needs it.
+- `pynem[fast]` — **Numba** (JIT acceleration of the sequential E-step; a
+  pure-Python fallback is used otherwise).
+- `pynem[dev]` — the test suite.
+
+(They combine: `pip install "pynem[fast,viz]"`.)
 
 ## Quick start
 
