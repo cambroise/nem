@@ -349,8 +349,16 @@ class NEM:
         N, D = X.shape
         beta = self.beta
 
+        # X doesn't change across this run's iterations, so its NaN mask and
+        # NaN-filled copy are computed once here and threaded through every
+        # compute_log_density/estimate_parameters call below, instead of each
+        # call reallocating its own full (N, D) array every iteration
+
+        observed = ~np.isnan(X)
+        Xf = np.where(observed, X, 0.0)
+
         # Initialize
-        C = self._initialize(X, ns, K, rng)
+        C = self._initialize(X, ns, K, rng, observed=observed, Xf=Xf)
 
         # Compute sample statistics for random init
         history = []
@@ -361,7 +369,7 @@ class NEM:
         for iteration in range(self.max_iter):
             # M-step (the first one has no previous parameters to reuse)
             if iteration == 0:
-                params = self._first_m_step(X, C)
+                params = self._first_m_step(X, C, observed=observed, Xf=Xf)
             else:
                 params = estimate_parameters(
                     X, C, self.family, self.dispersion, self.proportion,
@@ -369,6 +377,7 @@ class NEM:
                     old_centers=params["centers"],
                     old_dispersions=params["dispersions"],
                     weights=self._weights, completeness=self._completeness,
+                    observed=observed, Xf=Xf,
                 )
 
             # Beta estimation (pseudo-gradient)
@@ -381,12 +390,13 @@ class NEM:
                 X, params["centers"], params["dispersions"],
                 params["proportions"], self.family,
                 weights=self._weights, completeness=self._completeness,
+                observed=observed, Xf=Xf,
             )
 
             # E-step
             old_C = C.copy()
             C = self._e_step(X, C, params, ns, beta, K, rng,
-                             log_pkfki=log_pkfki)
+                             log_pkfki=log_pkfki, observed=observed, Xf=Xf)
 
             # Compute criteria
             criteria = self._compute_criteria(X, C, params, ns, beta,
@@ -416,14 +426,15 @@ class NEM:
             "history": history,
         }
 
-    def _first_m_step(self, X, C):
+    def _first_m_step(self, X, C, observed=None, Xf=None):
         """First M-step (no old parameters)."""
         return estimate_parameters(
             X, C, self.family, self.dispersion, self.proportion,
             miss_mode=self.missing, weights=self._weights, completeness=self._completeness,
+            observed=observed, Xf=Xf,
         )
 
-    def _initialize(self, X, ns, K, rng):
+    def _initialize(self, X, ns, K, rng, observed=None, Xf=None):
         """Initialize the classification matrix C (N, K)."""
         N, D = X.shape
         C = np.zeros((N, K))
@@ -447,9 +458,11 @@ class NEM:
                 X, params["centers"], params["dispersions"],
                 params["proportions"], self.family,
                 weights=self._weights, completeness=self._completeness,
+                observed=observed, Xf=Xf,
             )
             C_blind = self._normalize_membership(log_pkfki, np.zeros((N, K)))
-            C = self._e_step(X, C_blind, params, ns, self.beta, K, rng)
+            C = self._e_step(X, C_blind, params, ns, self.beta, K, rng,
+                             observed=observed, Xf=Xf)
 
         elif self.init == "sort":
             # Sort by first variable, partition into K equal groups
@@ -466,7 +479,8 @@ class NEM:
 
         elif self.init == "random":
             # Pick K distinct data points as centers, then do one E-step
-            observed = ~np.isnan(X)
+            if observed is None:
+                observed = ~np.isnan(X)
             sample_disp = np.nanvar(X, axis=0)
             sample_disp = np.maximum(sample_disp, VAR_FLOOR)
 
@@ -494,6 +508,7 @@ class NEM:
             log_pkfki = compute_log_density(
                 X, centers, dispersions, proportions, self.family,
                 weights=self._weights, completeness=self._completeness,
+                observed=observed, Xf=Xf,
             )
             # Without spatial term (beta=0 for init)
             C = self._normalize_membership(log_pkfki, np.zeros((N, K)))
@@ -522,7 +537,8 @@ class NEM:
             return hard
         return c_i
 
-    def _e_step(self, X, C, params, ns, beta, K, rng, log_pkfki=None):
+    def _e_step(self, X, C, params, ns, beta, K, rng, log_pkfki=None,
+               observed=None, Xf=None):
         """E-step: update classification (one sweep).
 
         With ``site_update='seq'`` the update is Gauss-Seidel (in place, index
@@ -539,6 +555,7 @@ class NEM:
                 X, params["centers"], params["dispersions"],
                 params["proportions"], self.family,
                 weights=self._weights, completeness=self._completeness,
+                observed=observed, Xf=Xf,
             )
 
         if self.site_update == "seq":
