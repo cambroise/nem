@@ -13,8 +13,8 @@ authors:
     family-names: Ambroise
     email: christophe.ambroise@univ-evry.fr
     affiliation: "Université d'Évry, Université Paris-Saclay, CNRS, LaMME"
-version: "0.6.0"
-date-released: "2026-06-10"
+version: "0.6.1"
+date-released: "2026-10-23"
 license: MIT
 repository-code: "https://github.com/cambroise/nem"
 url: "https://github.com/cambroise/nem"
