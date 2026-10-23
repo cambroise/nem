@@ -6,6 +6,34 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-10-23
+
+Performance release (contributed by Teo Lemane, #9). No change to the
+clustering results.
+
+### Changed
+- **Faster, leaner fit**: Numba kernels for the log-densities (Normal, Laplace,
+  Bernoulli, MAG-aware Bernoulli) and for the M-step inertia accumulation; the
+  NaN mask and NaN-filled copy of `X` are computed once per run instead of being
+  reallocated at every iteration. On `partition_pangenome` (Apple M4 Max,
+  Numba 0.64, best of several runs, v0.6.0 → v0.6.1):
+
+  | Pangenome (families × genomes) | Time | Peak memory during fit |
+  |---|---|---|
+  | *Chlamydia* (real), 1086 × 53 | 20 → 13 ms (×1.5) | — |
+  | simulated, 5000 × 100 | 169 → 96 ms (×1.8) | — |
+  | simulated, 20000 × 200 | 0.91 → 0.41 s (×2.2) | — |
+  | simulated, 50000 × 500 | 4.3 → 1.6 s (×2.7) | 1.30 GiB → 0.51 GiB (RSS) |
+
+  The gain grows with data size; small Gaussian problems are unchanged.
+  Partitions are identical to v0.6.0, the PPanGGOLiN reproduction tests pass,
+  and results do not depend on the number of Numba threads. Without Numba the
+  pure-NumPy path is used as before.
+
+### Added
+- `benchmarks/ppanggolin_profile.py` profiling script (pyinstrument / cProfile)
+  and an optional `profile` extra.
+
 ## [0.6.0] — 2026-06-10
 
 First release published to PyPI. Packaging, tooling and a complete
@@ -85,7 +113,8 @@ scikit-learn-style API; no change to the clustering behaviour.
   Bernoulli families, `nem`/`ncem`/`gem`, dispersion and proportion models),
   with a scikit-learn-style API, I/O for `.str`/`.dat`/`.nei`, and visualization.
 
-[Unreleased]: https://github.com/cambroise/nem/compare/pynem-v0.6.0...HEAD
+[Unreleased]: https://github.com/cambroise/nem/compare/pynem-v0.6.1...HEAD
+[0.6.1]: https://github.com/cambroise/nem/compare/pynem-v0.6.0...pynem-v0.6.1
 [0.6.0]: https://github.com/cambroise/nem/compare/pynem-v0.5.0...pynem-v0.6.0
 [0.5.0]: https://github.com/cambroise/nem/releases/tag/pynem-v0.5.0
 [0.4.0]: https://github.com/cambroise/nem/releases/tag/pynem-v0.4.0
