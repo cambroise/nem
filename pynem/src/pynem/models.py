@@ -4,6 +4,15 @@ from enum import Enum
 
 import numpy as np
 
+from ._fast import (
+    HAS_NUMBA,
+    density_bernoulli,
+    density_bernoulli_mag,
+    density_laplace,
+    density_normal,
+    inertia_accum,
+)
+
 # Three semantically distinct floors that used to share a single ``EPSILON``.
 # They are all kept at 1e-20 so the numerics are byte-for-byte unchanged (the
 # PPanGGOLiN reproduction and the Gaussian examples are preserved exactly); the
@@ -46,7 +55,7 @@ class Proportion(Enum):
 
 
 def compute_log_density(X, centers, dispersions, proportions, family,
-                        weights=None, completeness=None):
+                        weights=None, completeness=None, observed=None, Xf=None):
     """Compute log(p_k * f_k(x_i)) for all i and k.
 
     Parameters
@@ -69,24 +78,65 @@ def compute_log_density(X, centers, dispersions, proportions, family,
         becomes ``mu_kj * gamma_j`` and an absence in an incomplete genome is
         forgiven. ``None`` (default) = full completeness, exact standard density.
         Only affects the Bernoulli family.
+    observed, Xf : (N, D) arrays or None
+        Precomputed ``~np.isnan(X)`` / ``np.where(observed, X, 0.0)``. X does
+        not change across the iterations of a single fit, so callers that
+        already have these (NEM._run_once) can pass them in to skip
+        recomputing/reallocating a full (N, D) array on every call.
+        ``None`` (default) recomputes them here
 
     Returns
     -------
     log_pkfki : (N, K) array
         log(p_k * f_k(x_i)) for each observation i and class k.
     """
-    N, D = X.shape
+    if observed is None:
+        observed = ~np.isnan(X)            # (N, D)
+    if Xf is None:
+        Xf = np.where(observed, X, 0.0)    # NaN -> 0 (these terms are masked out)
+
+    if HAS_NUMBA:
+        return _compute_log_density_numba(Xf, observed, centers, dispersions,
+                                          proportions, family, weights, completeness)
+    return _compute_log_density_numpy(Xf, observed, centers, dispersions,
+                                      proportions, family, weights, completeness)
+
+
+def _compute_log_density_numba(Xf, observed, centers, dispersions, proportions,
+                               family, weights, completeness):
+    N, D = Xf.shape
+    K = centers.shape[0]
+    log_pkfki = np.empty((N, K))
+    has_weights = weights is not None
+    w = np.ascontiguousarray(weights, dtype=np.float64) if has_weights else np.empty(0)
+    centers_c = np.ascontiguousarray(centers, dtype=np.float64)
+    dispersions_c = np.ascontiguousarray(dispersions, dtype=np.float64)
+    proportions_c = np.ascontiguousarray(proportions, dtype=np.float64)
+    Xf_c = np.ascontiguousarray(Xf, dtype=np.float64)
+    observed_c = np.ascontiguousarray(observed)
+
+    if family == Family.NORMAL:
+        density_normal(Xf_c, observed_c, centers_c, dispersions_c, proportions_c,
+                       w, has_weights, log_pkfki)
+    elif family == Family.LAPLACE:
+        density_laplace(Xf_c, observed_c, centers_c, dispersions_c, proportions_c,
+                        w, has_weights, log_pkfki)
+    elif completeness is None:
+        density_bernoulli(Xf_c, observed_c, centers_c, dispersions_c, proportions_c,
+                          w, has_weights, log_pkfki)
+    else:
+        gamma = np.ascontiguousarray(completeness, dtype=np.float64)
+        density_bernoulli_mag(Xf_c, observed_c, centers_c, dispersions_c, proportions_c,
+                              gamma, w, has_weights, log_pkfki)
+    return log_pkfki
+
+
+def _compute_log_density_numpy(Xf, observed, centers, dispersions, proportions,
+                               family, weights, completeness):
+    N, D = Xf.shape
     K = centers.shape[0]
     log_pkfki = np.empty((N, K))
 
-    observed = ~np.isnan(X)            # (N, D)
-    Xf = np.where(observed, X, 0.0)    # NaN -> 0 (these terms are masked out)
-
-    # Vectorised over D; the K loop is cheap (K is small). For each class we
-    # build the per-(observation, variable) log-density contributions, zero out
-    # unobserved and zero-dispersion dimensions, then sum over D. A density is
-    # exactly zero (log = -inf) when an observed variable has zero dispersion
-    # yet the observation differs from the centre.
     for k in range(K):
         log_pk = np.log(max(proportions[k], PROB_FLOOR))
         v = dispersions[k]                       # (D,)
@@ -143,7 +193,8 @@ def compute_log_density(X, centers, dispersions, proportions, family,
 
 def estimate_parameters(X, C, family, dispersion_model, proportion_model,
                         miss_mode="replace", old_centers=None,
-                        old_dispersions=None, weights=None, completeness=None):
+                        old_dispersions=None, weights=None, completeness=None,
+                        observed=None, Xf=None):
     """M-step: estimate model parameters from soft classification.
 
     Parameters
@@ -170,6 +221,9 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
         only ``gamma_j`` of an incomplete genome's class still counts as
         present), and the dispersion follows from ``mu = frac / gamma``. Only
         used for the Bernoulli family. ``None`` = full completeness (standard).
+    observed, Xf : (N, D) arrays or None
+        Precomputed ``~np.isnan(X)`` / ``np.where(observed, X, 0.0)`` -- see
+        ``compute_log_density``. ``None`` (default) recomputes them here.
 
     Returns
     -------
@@ -177,7 +231,11 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
     """
     N, D = X.shape
     K = C.shape[1]
-    observed = ~np.isnan(X)  # (N, D)
+    if observed is None:
+        observed = ~np.isnan(X)  # (N, D)
+    if Xf is None:
+        Xf = np.where(observed, X, 0.0)
+    unobserved = ~observed
     comp_bern = family == Family.BERNOULLI and completeness is not None
 
     # Class sizes
@@ -199,31 +257,35 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
     if comp_bern:
         # MAG-aware: de-bias presence by completeness; sets mode AND dispersion.
         centers, dispersions = _estimate_bernoulli_completeness(
-            X, C, observed, completeness)
+            C, observed, completeness, Xf)
     elif family == Family.BERNOULLI:
-        centers = _estimate_bernoulli_centers(X, C, observed)
+        centers = _estimate_bernoulli_centers(C, observed, Xf)
     elif family == Family.LAPLACE:
         centers = _estimate_laplace_centers(X, C, observed, K, D, N_K)
     else:
-        centers = _estimate_mean_centers(X, C, observed, K, D, N, N_K, N_KD,
-                                         miss_mode, old_centers)
+        centers = _estimate_mean_centers(C, observed, K, D, N, N_K, N_KD,
+                                         miss_mode, old_centers, Xf)
 
     if not comp_bern:
-        # --- Inertia ---
+        use_abs = family != Family.NORMAL
         Iner_KD = np.zeros((K, D))
-        X_filled = X.copy()
-        X_filled[~observed] = 0.0
+        if HAS_NUMBA:
+            inertia_accum(np.ascontiguousarray(Xf, dtype=np.float64),
+                          np.ascontiguousarray(observed),
+                          np.ascontiguousarray(C, dtype=np.float64),
+                          np.ascontiguousarray(centers, dtype=np.float64),
+                          use_abs, Iner_KD)
+        else:
+            for k in range(K):
+                diff = Xf - centers[k]
+                diff[unobserved] = 0.0
+                if use_abs:
+                    Iner_KD[k] = (C[:, k:k+1] * np.abs(diff) * observed).sum(axis=0)
+                else:
+                    Iner_KD[k] = (C[:, k:k+1] * diff ** 2 * observed).sum(axis=0)
 
-        for k in range(K):
-            diff = X_filled - centers[k]
-            diff[~observed] = 0.0
-            if family == Family.NORMAL:
-                Iner_KD[k] = (C[:, k:k+1] * diff ** 2 * observed).sum(axis=0)
-            else:  # Laplace or Bernoulli
-                Iner_KD[k] = (C[:, k:k+1] * np.abs(diff) * observed).sum(axis=0)
-
-            # Missing data correction for REPLACE mode (Normal only)
-            if miss_mode == "replace" and family == Family.NORMAL and old_dispersions is not None:
+        if miss_mode == "replace" and family == Family.NORMAL and old_dispersions is not None:
+            for k in range(K):
                 n_miss_kd = N_K[k] - N_KD[k]
                 Iner_KD[k] += np.maximum(n_miss_kd, 0) * old_dispersions[k]
 
@@ -245,7 +307,7 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
 
     # --- Recover collapsed (empty) classes -------------------------------
     centers, dispersions, proportions = _reinit_empty_classes(
-        X, centers, dispersions, proportions, raw_N_K, observed
+        X, centers, dispersions, proportions, raw_N_K, observed, Xf
     )
 
     return {
@@ -256,7 +318,7 @@ def estimate_parameters(X, C, family, dispersion_model, proportion_model,
 
 
 def _reinit_empty_classes(X, centers, dispersions, proportions, raw_N_K,
-                          observed):
+                          observed, Xf):
     """k-means++ style recovery for classes that have collapsed (emptied).
 
     A class whose total membership falls below ``EMPTY_CLASS_WEIGHT`` has its
@@ -272,7 +334,6 @@ def _reinit_empty_classes(X, centers, dispersions, proportions, raw_N_K,
         return centers, dispersions, proportions
 
     N = X.shape[0]
-    Xf = np.where(observed, X, 0.0)
     populated = raw_N_K >= EMPTY_CLASS_WEIGHT
     if populated.any():
         default_disp = np.maximum(dispersions[populated].mean(axis=0), VAR_FLOOR)
@@ -300,15 +361,13 @@ def _reinit_empty_classes(X, centers, dispersions, proportions, raw_N_K,
     return centers, dispersions, proportions
 
 
-def _estimate_mean_centers(X, C, observed, K, D, N, N_K, N_KD, miss_mode,
-                           old_centers):
+def _estimate_mean_centers(C, observed, K, D, N, N_K, N_KD, miss_mode,
+                           old_centers, Xf):
     """Weighted mean center estimation (Normal, Bernoulli)."""
     centers = np.zeros((K, D))
-    X_filled = X.copy()
-    X_filled[~observed] = 0.0
 
     for k in range(K):
-        weighted_sum = (C[:, k:k+1] * X_filled * observed).sum(axis=0)
+        weighted_sum = (C[:, k:k+1] * Xf * observed).sum(axis=0)
         if miss_mode == "replace" and old_centers is not None:
             n_miss_kd = N_K[k] - N_KD[k]
             weighted_sum += np.maximum(n_miss_kd, 0) * old_centers[k]
@@ -319,7 +378,7 @@ def _estimate_mean_centers(X, C, observed, K, D, N, N_K, N_KD, miss_mode,
     return centers
 
 
-def _estimate_bernoulli_centers(X, C, observed):
+def _estimate_bernoulli_centers(C, observed, Xf):
     """Bernoulli center = binary mode (weighted median of {0,1}), vectorised.
 
     For 0/1 data the C-weighted median equals 1 iff the weighted fraction of 1s
@@ -331,7 +390,6 @@ def _estimate_bernoulli_centers(X, C, observed):
     -------
     centers : (K, D) array of {0.0, 1.0}
     """
-    Xf = np.where(observed, X, 0.0)
     obs = observed.astype(float)
     W_total = C.T @ obs        # (K, D) sum of weights over observed entries
     W_ones = C.T @ Xf          # (K, D) weighted count of 1s
@@ -340,7 +398,7 @@ def _estimate_bernoulli_centers(X, C, observed):
     return (frac1 > 0.5).astype(float)
 
 
-def _estimate_bernoulli_completeness(X, C, observed, completeness):
+def _estimate_bernoulli_completeness(C, observed, completeness, Xf):
     """MAG-aware Bernoulli mode + dispersion, de-biased by genome completeness.
 
     The observed presence fraction ``frac`` of a class in genome ``j`` is
@@ -355,7 +413,6 @@ def _estimate_bernoulli_completeness(X, C, observed, completeness):
     centers : (K, D) array of {0.0, 1.0}
     dispersions : (K, D) array — epsilon in [VAR_FLOOR, 0.5]
     """
-    Xf = np.where(observed, X, 0.0)
     obs = observed.astype(float)
     W_total = C.T @ obs
     W_ones = C.T @ Xf

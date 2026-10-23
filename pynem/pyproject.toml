@@ -46,6 +46,7 @@ dependencies = [
 viz = ["matplotlib>=3.5"]                    # plotting (pynem.viz); optional
 fast = ["numba>=0.57"]                       # JIT of the sequential E-step; pure-Python fallback otherwise
 dev = ["pytest>=7.0", "ruff>=0.6", "matplotlib>=3.5"]  # tests exercise pynem.viz
+profile = [ "pyinstrument", "flameprof", "numba"] # perf profiling
 
 [project.urls]
 Homepage = "https://github.com/cambroise/nem"
