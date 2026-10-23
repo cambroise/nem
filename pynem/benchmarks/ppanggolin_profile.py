@@ -38,7 +38,8 @@ CPROFILE_HTML = """<!doctype html>
   body {{ font-family: -apple-system, "Segoe UI", sans-serif; margin: 24px; }}
   h1 {{ font-size: 18px; }}
   .meta {{ color: #666; font-size: 13px; margin-bottom: 16px; }}
-  .flame {{ overflow-x: auto; border: 1px solid #ddd; border-radius: 6px; padding: 8px; background: #fff; }}
+  .flame {{ overflow-x: auto; border: 1px solid #ddd; border-radius: 6px;
+           padding: 8px; background: #fff; }}
   .flame svg {{ display: block; width: 100%; height: auto; min-width: 900px; }}
   pre {{ background: #f6f6f6; border: 1px solid #ddd; border-radius: 6px; padding: 12px;
          overflow-x: auto; font-size: 12px; margin-top: 24px; }}
@@ -125,7 +126,8 @@ def main():
                           "JIT compilation cost from the profile")
     args = ap.parse_args()
 
-    out_path = args.out or DEFAULT_OUT[args.profiler if args.profiler == "cprofile" else args.renderer]
+    out_key = args.profiler if args.profiler == "cprofile" else args.renderer
+    out_path = args.out or DEFAULT_OUT[out_key]
 
     X, G = load(args.data_dir)
     print(f"N={X.shape[0]} D={X.shape[1]} edges={G.number_of_edges()}", file=sys.stderr)
@@ -163,7 +165,9 @@ def main():
             svg = subprocess.run(["uvx", "flameprof", tmp.name],
                                   check=True, capture_output=True, text=True).stdout
 
-        svg = svg.replace('<svg version="1.1"', '<svg version="1.1" preserveAspectRatio="xMinYMin meet"', 1)
+        svg = svg.replace(
+            '<svg version="1.1"', '<svg version="1.1" preserveAspectRatio="xMinYMin meet"', 1
+        )
 
         html = CPROFILE_HTML.format(
             title=escape(f"cProfile — {Path(args.data_dir).name}"),
