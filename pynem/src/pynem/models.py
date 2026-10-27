@@ -347,7 +347,7 @@ def _reinit_empty_classes(X, centers, dispersions, proportions, raw_N_K,
 
     # squared distance to the dominant centre, over observed variables
     d2 = ((Xf - centers[dominant]) ** 2 * observed).sum(axis=1)
-    far_order = np.argsort(d2)[::-1]   # farthest observations first
+    far_order = np.argsort(d2, kind="stable")[::-1]  # farthest observations first
     used = set()
     for k in empty:
         far = next((int(i) for i in far_order if i not in used),
