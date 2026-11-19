@@ -39,6 +39,7 @@ dependencies = [
     "numpy>=1.22",
     "scipy>=1.8",
     "networkx>=2.8",
+    "threadpoolctl>=3",
 ]
 
 [project.optional-dependencies]
