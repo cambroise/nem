@@ -471,7 +471,7 @@ class NEM:
             # Handle NaN by setting to max for sorting
             nan_mask = np.isnan(vals)
             vals[nan_mask] = np.nanmax(vals) + 1 if not nan_mask.all() else 0
-            order = np.argsort(vals)
+            order = np.argsort(vals, kind="stable")
             for rank, idx in enumerate(order):
                 ki = (rank * K) // N
                 ki = min(ki, K - 1)
