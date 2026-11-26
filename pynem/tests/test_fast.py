@@ -104,5 +104,6 @@ def test_parallel_kernel_survives_fork(tmp_path):
     env["PYTHONPATH"] = str(Path(__file__).parent.parent / "src")
     script = tmp_path / "fork.py"
     script.write_text(FORK_SCRIPT)
-    done = subprocess.run([sys.executable, str(script)], env=env, capture_output=True, text=True, timeout=120)
+    done = subprocess.run([sys.executable, str(script)], env=env,
+                          capture_output=True, text=True, timeout=120)
     assert done.returncode == 0 and "[" in done.stdout, done.stderr
