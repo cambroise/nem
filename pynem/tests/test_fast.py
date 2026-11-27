@@ -74,3 +74,36 @@ def test_python_fallback_runs_without_numba():
         core.HAS_NUMBA = saved
     assert m.membership_.shape == (X.shape[0], 3)
     np.testing.assert_allclose(m.membership_.sum(axis=1), 1.0, atol=1e-10)
+
+
+FORK_SCRIPT = """
+import multiprocessing as mp
+import numpy as np
+from pynem._fast import inertia_accum
+
+def run(_):
+    X = np.ones((50, 3))
+    out = np.zeros((2, 3))
+    inertia_accum(X, np.ones_like(X), np.full((50, 2), 0.5), np.zeros((2, 3)), True, out)
+    return out.sum()
+
+if __name__ == "__main__":
+    run(0)
+    with mp.get_context("fork").Pool(1) as pool:
+        print(pool.map_async(run, [0]).get(60))
+"""
+
+
+@pytest.mark.skipif(not HAS_NUMBA, reason="numba not installed")
+def test_parallel_kernel_survives_fork(tmp_path):
+    """A worker forked after the parent ran a parallel kernel can run it too."""
+    import os
+    import subprocess
+
+    env = {k: v for k, v in os.environ.items() if k != "NUMBA_THREADING_LAYER"}
+    env["PYTHONPATH"] = str(Path(__file__).parent.parent / "src")
+    script = tmp_path / "fork.py"
+    script.write_text(FORK_SCRIPT)
+    done = subprocess.run([sys.executable, str(script)], env=env,
+                          capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0 and "[" in done.stdout, done.stderr

@@ -11,6 +11,10 @@ import math
 
 import numpy as np
 
+from .threads import _forksafe_layer
+
+_forksafe_layer()  # before the first parallel kernel
+
 try:
     from numba import njit, prange
     HAS_NUMBA = True
